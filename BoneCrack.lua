@@ -6,9 +6,13 @@ local LANDING_WINDOW = 0.5
 -- The client does not tell an addon whether another player is falling, so a group member's health
 -- drop of at least this fraction of their maximum, out of combat, counts as fall damage.
 local GROUP_MIN_LOSS = 0.05
+-- Falling damage starts at about 14.6 yards, which takes about 1.2 seconds of free fall. This is the
+-- stand-in for the health drop when the client hides the player's health from addons.
+local FALL_SECONDS = 1.2
 
 local lastPlayed = 0
 local lastFalling = -math.huge
+local fallStart = 0
 local wasFalling = false
 local debugging = false
 local health = {}
@@ -46,6 +50,16 @@ local function isGroupUnit(unit)
     return unit == "player" or unit:match("^party%d$") ~= nil or unit:match("^raid%d+$") ~= nil
 end
 
+-- Runs when the player stops falling. It only plays when the player's health is hidden, because
+-- the health check in OnEvent covers the case where it is readable.
+local function landed()
+    local duration = GetTime() - fallStart
+    local hidden = not readable(UnitHealth("player"))
+    local water = IsSwimming() or IsFlying()
+    log("landed after", duration, "seconds, health hidden:", hidden, "swimming or flying:", water)
+    if hidden and duration >= FALL_SECONDS and not water then play() end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("UNIT_HEALTH")
 frame:SetScript("OnUpdate", function()
@@ -54,6 +68,7 @@ frame:SetScript("OnUpdate", function()
     if falling ~= wasFalling then
         wasFalling = falling
         log(falling and "started falling" or "stopped falling")
+        if falling then fallStart = GetTime() else landed() end
     end
 end)
 frame:SetScript("OnEvent", function(_, _, unit)
