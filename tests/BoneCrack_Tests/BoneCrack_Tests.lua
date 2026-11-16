@@ -255,6 +255,100 @@ local function runAll()
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
+
+        -- Runs a hidden-health 1.5s fall with the group and chat APIs stubbed. Returns the recorded
+        -- plays and the addon messages that were sent.
+        local function fallInGroup(opts)
+            local sent = {}
+            local chat = C_ChatInfo
+            local originals = {
+                SendAddonMessage = chat.SendAddonMessage,
+                InChatMessagingLockdown = chat.InChatMessagingLockdown,
+            }
+            chat.SendAddonMessage = function(prefix, text, channel)
+                sent[#sent + 1] = { prefix = prefix, text = text, channel = channel }
+                return 0
+            end
+            chat.InChatMessagingLockdown = function() return opts.lockdown or false end
+            local ok, calls = pcall(function()
+                local result
+                withStubs({
+                    IsInGroup = function() return opts.group or false end,
+                    IsInRaid = function() return opts.raid or false end,
+                }, function()
+                    result = withFall(frame, function(state, step)
+                        state.hidden = true
+                        step(10, true)
+                        step(11.5, false)
+                    end)
+                end)
+                return result
+            end)
+            chat.SendAddonMessage = originals.SendAddonMessage
+            chat.InChatMessagingLockdown = originals.InChatMessagingLockdown
+            if not ok then error(calls, 0) end
+            return calls, sent
+        end
+
+        run("own fall in a party plays once and sends fell to PARTY", function()
+            local calls, sent = fallInGroup({ group = true })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#sent == 1, "expected 1 message, got " .. #sent)
+            check(sent[1].prefix == "BoneCrack", "unexpected prefix " .. tostring(sent[1].prefix))
+            check(sent[1].text == "fell", "unexpected text " .. tostring(sent[1].text))
+            check(sent[1].channel == "PARTY", "unexpected channel " .. tostring(sent[1].channel))
+        end)
+
+        run("own fall in a raid sends fell to RAID", function()
+            local calls, sent = fallInGroup({ group = true, raid = true })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#sent == 1, "expected 1 message, got " .. #sent)
+            check(sent[1].channel == "RAID", "unexpected channel " .. tostring(sent[1].channel))
+        end)
+
+        run("own fall during chat lockdown plays once and sends nothing", function()
+            local calls, sent = fallInGroup({ group = true, lockdown = true })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#sent == 0, "expected 0 messages, got " .. #sent)
+        end)
+
+        run("own fall outside a group plays once and sends nothing", function()
+            local calls, sent = fallInGroup({ group = false })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#sent == 0, "expected 0 messages, got " .. #sent)
+        end)
+
+        -- Fires CHAT_MSG_ADDON at the addon frame on a later clock and returns the recorded plays.
+        local function receive(...)
+            local args = { ... }
+            return record(function()
+                withLaterClock(function()
+                    -- wowless has no real Ambiguate, so this strips the realm like a same-realm "none" does.
+                    withStubs({
+                        Ambiguate = function(name) return (name:gsub("%-.*$", "")) end,
+                        UnitName = function(unit) if unit == "player" then return "Me" end end,
+                    }, function()
+                        frame:GetScript("OnEvent")(frame, "CHAT_MSG_ADDON", unpack(args))
+                    end)
+                end)
+            end)
+        end
+
+        run("fall message from a group member plays the sound", function()
+            local calls = receive("BoneCrack", "fell", "PARTY", "Friend-Realm")
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(isBoneCrack(calls[1].path), "unexpected path " .. tostring(calls[1].path))
+        end)
+
+        run("fall message from the player's own name stays silent", function()
+            local calls = receive("BoneCrack", "fell", "PARTY", "Me-Realm")
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("addon message with another prefix stays silent", function()
+            local calls = receive("OtherAddon", "fell", "PARTY", "Friend-Realm")
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
     end
 
     __wowless.printf("RESULT %d passed, %d failed\n", passed, failed)
