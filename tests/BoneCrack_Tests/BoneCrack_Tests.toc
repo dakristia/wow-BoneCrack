@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: BoneCrack Tests
+## Dependencies: BoneCrack
+BoneCrack_Tests.lua
