@@ -9,7 +9,13 @@ local GROUP_MIN_LOSS = 0.05
 
 local lastPlayed = 0
 local lastFalling = -math.huge
+local wasFalling = false
+local debugging = false
 local health = {}
+
+local function log(...)
+    if debugging then print("|cffff8800BoneCrack|r", ...) end
+end
 
 local function play()
     local now = GetTime()
@@ -26,9 +32,13 @@ end
 -- Returns the fraction of maximum health that the unit lost since the last event, or nil.
 local function healthLost(unit)
     local current, max = UnitHealth(unit), UnitHealthMax(unit)
-    if not readable(current) or not readable(max) or max == 0 then return nil end
+    if not readable(current) or not readable(max) or max == 0 then
+        log(unit, "health is secret or the maximum is 0")
+        return nil
+    end
     local previous = health[unit]
     health[unit] = current
+    log(unit, "health", tostring(previous), "->", current, "of", max)
     if previous and current < previous then return (previous - current) / max end
 end
 
@@ -39,18 +49,32 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("UNIT_HEALTH")
 frame:SetScript("OnUpdate", function()
-    if IsFalling() then lastFalling = GetTime() end
+    local falling = IsFalling() and true or false
+    if falling then lastFalling = GetTime() end
+    if falling ~= wasFalling then
+        wasFalling = falling
+        log(falling and "started falling" or "stopped falling")
+    end
 end)
 frame:SetScript("OnEvent", function(_, _, unit)
     if type(unit) ~= "string" or not isGroupUnit(unit) then return end
     local loss = healthLost(unit)
     if not loss then return end
     if UnitIsUnit(unit, "player") then
-        if GetTime() - lastFalling <= LANDING_WINDOW then play() end
+        local sinceFalling = GetTime() - lastFalling
+        log("player lost", loss, "and was falling", sinceFalling, "seconds ago, window", LANDING_WINDOW)
+        if sinceFalling <= LANDING_WINDOW then play() end
     elseif loss >= GROUP_MIN_LOSS and not UnitAffectingCombat(unit) then
         play()
     end
 end)
 
 SLASH_BONECRACK1 = "/bonecrack"
-SlashCmdList["BONECRACK"] = play
+SlashCmdList["BONECRACK"] = function(message)
+    if message == "debug" then
+        debugging = not debugging
+        print("BoneCrack debug " .. (debugging and "on" or "off"))
+    else
+        play()
+    end
+end
