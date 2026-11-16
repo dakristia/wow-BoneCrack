@@ -80,6 +80,41 @@ local function withHealth(frame, opts, fn)
     return calls
 end
 
+-- Runs fn(state, step) with the fall APIs stubbed on a later fake clock, and returns the recorded plays.
+-- state has hidden, swimming and flying, which the test can edit. step(time, falling) sets the fake
+-- clock and IsFalling, then calls the addon's OnUpdate.
+-- The addon's wasFalling state persists between checks, and the earlier checks leave it true. So the
+-- helper first steps with IsFalling false and readable health, which makes the addon call landed()
+-- without a play, and every check ends with a step where IsFalling is false.
+local function withFall(frame, fn)
+    local state = { hidden = false, swimming = false, flying = false }
+    local now, falling = 0, false
+    return record(function()
+        withLaterClock(function()
+            local base = GetTime()
+            withStubs({
+                GetTime = function() return now end,
+                IsFalling = function() return falling end,
+                IsSwimming = function() return state.swimming end,
+                IsFlying = function() return state.flying end,
+                UnitHealth = function() return state.hidden and "SECRET" or 100 end,
+                issecretvalue = function(v) return state.hidden and v == "SECRET" end,
+            }, function()
+                local function step(offset, isFalling)
+                    now, falling = base + offset, isFalling
+                    frame:GetScript("OnUpdate")(frame, 0)
+                end
+                local hidden = state.hidden
+                state.hidden = false
+                step(0, false)
+                state.hidden = hidden
+                fn(state, step)
+                step(100, false)
+            end)
+        end)
+    end)
+end
+
 -- The addon's handlers are locals, so find its frame and call its scripts. wowless has no
 -- debug.getinfo and Blizzard frames also register UNIT_HEALTH, so this keeps the unnamed frames
 -- that have both scripts and picks the one that plays the sound when party4 drops 10% out of
@@ -178,6 +213,45 @@ local function runAll()
             local calls = withHealth(frame, { combat = false }, function(fire)
                 fire("party3", 100)
                 fire("party3", 98)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        -- The fall checks use withFall, which resets the addon's falling state and uses a later clock.
+        run("hidden health and a 1.5s fall plays the sound", function()
+            local calls = withFall(frame, function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.5, false)
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(isBoneCrack(calls[1].path), "unexpected path " .. tostring(calls[1].path))
+        end)
+
+        run("hidden health and a 0.5s fall stays silent", function()
+            local calls = withFall(frame, function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(10.5, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("hidden health and a 1.5s fall ending in water stays silent", function()
+            local calls = withFall(frame, function(state, step)
+                state.hidden = true
+                step(10, true)
+                state.swimming = true
+                step(11.5, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("readable health and a 1.5s fall stays silent", function()
+            -- No UNIT_HEALTH event is fired, so only the fall fallback could play.
+            local calls = withFall(frame, function(state, step)
+                step(10, true)
+                step(11.5, false)
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
