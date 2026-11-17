@@ -218,11 +218,11 @@ local function runAll()
         end)
 
         -- The fall checks use withFall, which resets the addon's falling state and uses a later clock.
-        run("hidden health and a 1.5s fall plays the sound", function()
+        run("hidden health and a 2.0s fall plays the sound", function()
             local calls = withFall(frame, function(state, step)
                 state.hidden = true
                 step(10, true)
-                step(11.5, false)
+                step(12, false)
             end)
             check(#calls == 1, "expected 1 play, got " .. #calls)
             check(isBoneCrack(calls[1].path), "unexpected path " .. tostring(calls[1].path))
@@ -237,26 +237,47 @@ local function runAll()
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
 
-        run("hidden health and a 1.5s fall ending in water stays silent", function()
+        run("hidden health and a 2.0s fall ending in water stays silent", function()
             local calls = withFall(frame, function(state, step)
                 state.hidden = true
                 step(10, true)
                 state.swimming = true
-                step(11.5, false)
+                step(12, false)
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
 
-        run("readable health and a 1.5s fall stays silent", function()
+        run("readable health and a 2.0s fall stays silent", function()
             -- No UNIT_HEALTH event is fired, so only the fall fallback could play.
             local calls = withFall(frame, function(state, step)
                 step(10, true)
-                step(11.5, false)
+                step(12, false)
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
 
-        -- Runs a hidden-health 1.5s fall with the group and chat APIs stubbed. Returns the recorded
+        -- woundsReadable in the addon is a module local that stays true once a readable UNIT_COMBAT
+        -- for the player arrives. So every check that needs it false runs before the first check
+        -- that fires such an event (the WOUND checks at the end of this file).
+        run("hidden health and a 1.4s fall stays silent without a readable WOUND", function()
+            local calls = withFall(frame, function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.4, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("hidden health and a 1.8s fall plays the sound without a readable WOUND", function()
+            local calls = withFall(frame, function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.8, false)
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
+        -- Runs a hidden-health 2.0s fall with the group and chat APIs stubbed. Returns the recorded
         -- plays and the addon messages that were sent.
         local function fallInGroup(opts)
             local sent = {}
@@ -279,7 +300,7 @@ local function runAll()
                     result = withFall(frame, function(state, step)
                         state.hidden = true
                         step(10, true)
-                        step(11.5, false)
+                        step(12, false)
                     end)
                 end)
                 return result
@@ -347,6 +368,78 @@ local function runAll()
 
         run("addon message with another prefix stays silent", function()
             local calls = receive("OtherAddon", "fell", "PARTY", "Friend-Realm")
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        -- WOUND checks. The first one that fires a readable UNIT_COMBAT sets woundsReadable for the
+        -- rest of the run, so no check that needs it false may come after this point.
+        local function wound()
+            frame:GetScript("OnEvent")(frame, "UNIT_COMBAT", "player", "WOUND", "", 50, 1)
+        end
+
+        -- withFall with IsInGroup false, so nothing is sent.
+        local function soloFall(fn)
+            local result
+            withStubs({ IsInGroup = function() return false end, IsInRaid = function() return false end }, function()
+                result = withFall(frame, fn)
+            end)
+            return result
+        end
+
+        run("hidden health, 1.2s fall and a WOUND 0.1s before landing plays the sound", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.1, true)
+                wound()
+                step(11.2, false)
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
+        run("hidden health, 1.2s fall and a WOUND 0.2s after landing plays the sound", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.2, false)
+                step(11.3, false)
+                step(11.4, false)
+                wound()
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
+        run("hidden health and a 2.5s fall without a WOUND stays silent once wounds are readable", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(12.5, false)
+                step(12.8, false)
+                step(13.2, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("hidden health and a 0.7s jump with a WOUND stays silent", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(10.6, true)
+                wound()
+                step(10.7, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("hidden health, 1.2s fall and a WOUND 0.8s after landing stays silent", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.2, false)
+                step(11.8, false)
+                step(12.0, false)
+                wound()
+            end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
     end

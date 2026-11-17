@@ -7,9 +7,14 @@ local LANDING_WINDOW = 0.5
 -- The client does not tell an addon whether another player is falling, so a group member's health
 -- drop of at least this fraction of their maximum, out of combat, counts as fall damage.
 local GROUP_MIN_LOSS = 0.05
--- Falling damage starts at about 14.6 yards, which takes about 1.2 seconds of free fall. This is the
--- stand-in for the health drop when the client hides the player's health from addons.
-local FALL_SECONDS = 1.2
+-- A normal jump keeps the player in the air for about 0.75 seconds, so shorter landings are never falls.
+local MIN_FALL_SECONDS = 1.0
+-- UNIT_COMBAT can arrive just before or just after the OnUpdate script sees the landing, so a WOUND
+-- this close to the landing counts as the fall's damage.
+local WOUND_WINDOW = 0.5
+-- Falling damage starts at about 14.6 yards. A jump followed by that drop takes about 1.6 seconds,
+-- so this is the stand-in for damage when the client hides both health and UNIT_COMBAT.
+local FALL_SECONDS = 1.6
 -- The debug probe samples party positions this often and logs height changes bigger than this.
 local PROBE_INTERVAL = 0.2
 local PROBE_MIN_DROP = 2
@@ -18,6 +23,9 @@ local lastPlayed = 0
 local lastFalling = -math.huge
 local fallStart = 0
 local wasFalling = false
+local lastWound = -math.huge
+local pendingLanding = nil
+local woundsReadable = false
 local debugging = false
 local health = {}
 local lastProbe = 0
@@ -80,14 +88,39 @@ local function isGroupUnit(unit)
     return unit == "player" or unit:match("^party%d$") ~= nil or unit:match("^raid%d+$") ~= nil
 end
 
--- Runs when the player stops falling. It only plays when the player's health is hidden, because
--- the health check in onHealth covers the case where it is readable.
+-- Runs when the player stops falling. The health check in onHealth covers readable health, so this
+-- only decides when health is hidden. A WOUND from UNIT_COMBAT is the damage proof when the client
+-- shows it; otherwise only a fall long enough to hurt counts.
 local function landed()
-    local duration = GetTime() - fallStart
+    local now = GetTime()
+    local duration = now - fallStart
     local hidden = not readable(UnitHealth("player"))
     local water = IsSwimming() or IsFlying()
-    log("landed after", duration, "seconds, health hidden:", hidden, "swimming or flying:", water)
-    if hidden and duration >= FALL_SECONDS and not water then playerFell() end
+    log("landed after", duration, "seconds, health hidden:", hidden, "swimming or flying:", water,
+        "wounds readable:", woundsReadable)
+    if not hidden or water or duration < MIN_FALL_SECONDS then return end
+    if woundsReadable then
+        if now - lastWound <= WOUND_WINDOW then
+            playerFell()
+        else
+            -- The WOUND for this landing may still be on its way.
+            pendingLanding = now
+        end
+    elseif duration >= FALL_SECONDS then
+        playerFell()
+    end
+end
+
+local function onPlayerCombat(action)
+    if not readable(action) then return end
+    woundsReadable = true
+    if action ~= "WOUND" then return end
+    local now = GetTime()
+    lastWound = now
+    if pendingLanding and now - pendingLanding <= WOUND_WINDOW then
+        pendingLanding = nil
+        playerFell()
+    end
 end
 
 -- Debug only: logs big height changes of party members, to find out whether UnitPosition can see
@@ -149,6 +182,7 @@ frame:SetScript("OnUpdate", function()
         log(falling and "started falling" or "stopped falling")
         if falling then fallStart = now else landed() end
     end
+    if pendingLanding and now - pendingLanding > WOUND_WINDOW then pendingLanding = nil end
     if debugging then probePositions(now) end
 end)
 frame:SetScript("OnEvent", function(_, event, ...)
@@ -161,8 +195,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if event == "UNIT_HEALTH" then
         onHealth(unit)
     else
-        -- Debug only: shows whether UNIT_COMBAT fires for party members and which arguments are secret.
         log("UNIT_COMBAT", ...)
+        if unit == "player" then onPlayerCombat(select(2, ...)) end
     end
 end)
 

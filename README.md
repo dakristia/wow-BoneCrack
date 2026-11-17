@@ -8,7 +8,7 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 
 ## How it works
 
-- Your own falls: the client hides your health from addons, so BoneCrack plays when you land after at least 1.2 seconds of free fall, unless you land in water or are flying.
+- Your own falls: the client hides your health from addons, so BoneCrack plays when you land after a fall and the client reports a WOUND to you right at the landing. If the client hides that too, it falls back to air time of at least 1.6 seconds. It stays silent if you land in water or are flying.
 - Group members: their health is hidden too, so BoneCrack can only hear a group member's fall when they also run BoneCrack. Their addon sends a party or raid addon message. Addon messages are blocked inside instances, so this only works in the open world.
 
 ## Commands
