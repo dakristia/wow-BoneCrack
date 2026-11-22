@@ -2,6 +2,7 @@
 ## Title: BoneCrack
 ## Notes: Plays a bone-crack sound when you or a group member takes fall damage
 ## Author: Daniel
-## Version: 0.1.1
+## Version: @project-version@
+## X-Curse-Project-ID: 1823372
 
 BoneCrack.lua

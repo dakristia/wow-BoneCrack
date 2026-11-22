@@ -1,0 +1,5 @@
+package-as: BoneCrack
+
+ignore:
+  - README.md
+  - tests
