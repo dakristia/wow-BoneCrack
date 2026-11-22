@@ -102,15 +102,14 @@ local function landed()
         "wounds readable:", woundsReadable, "in combat:", combat)
     local minimum = combat and FALL_SECONDS or MIN_FALL_SECONDS
     if not hidden or water or duration < minimum then return end
-    if woundsReadable then
-        if now - lastWound <= WOUND_WINDOW then
-            playerFell()
-        else
-            -- The WOUND for this landing may still be on its way.
-            pendingLanding = now
-        end
-    elseif duration >= FALL_SECONDS then
+    if now - lastWound <= WOUND_WINDOW then
         playerFell()
+    elseif not woundsReadable and duration >= FALL_SECONDS then
+        playerFell()
+    else
+        -- The WOUND for this landing may still be on its way. woundsReadable is false after a login
+        -- until the first readable UNIT_COMBAT, so that first WOUND can come from this landing too.
+        pendingLanding = now
     end
 end
 

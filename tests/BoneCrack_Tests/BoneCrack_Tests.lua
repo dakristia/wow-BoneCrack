@@ -387,6 +387,19 @@ local function runAll()
             return result
         end
 
+        -- This check must fire the first readable UNIT_COMBAT, because it covers a login where the
+        -- addon has not seen one yet.
+        run("hidden health, 1.4s fall and the first WOUND 0.2s after landing plays the sound", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.4, false)
+                step(11.6, false)
+                wound()
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
         run("hidden health, 1.2s fall and a WOUND 0.1s before landing plays the sound", function()
             local calls = soloFall(function(state, step)
                 state.hidden = true
