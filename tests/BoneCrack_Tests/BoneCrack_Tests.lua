@@ -372,6 +372,59 @@ local function runAll()
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
 
+        -- Debug log checks. UNIT_COMBAT for party1 logs a line but never sets woundsReadable, and debug
+        -- is off again at the end, so later checks see the same state as before.
+        local function combatLine(n)
+            frame:GetScript("OnEvent")(frame, "UNIT_COMBAT", "party1", "HIT", "", n, 1)
+        end
+
+        run("debug on saves a line to BoneCrackDebugLog", function()
+            SlashCmdList["BONECRACK"]("debug")
+            local ok, err = pcall(function()
+                check(type(BoneCrackDebugLog) == "table" and #BoneCrackDebugLog == 0, "log was not cleared on debug on")
+                combatLine(1)
+                check(#BoneCrackDebugLog == 1, "expected 1 line, got " .. #BoneCrackDebugLog)
+                check(BoneCrackDebugLog[1]:find("UNIT_COMBAT party1", 1, true) ~= nil,
+                    "unexpected line " .. tostring(BoneCrackDebugLog[1]))
+            end)
+            SlashCmdList["BONECRACK"]("debug")
+            if not ok then error(err, 0) end
+        end)
+
+        run("debug log keeps only the newest 500 lines", function()
+            SlashCmdList["BONECRACK"]("debug")
+            local ok, err = pcall(function()
+                for i = 1, 520 do combatLine(i) end
+                check(#BoneCrackDebugLog == 500, "expected 500 lines, got " .. #BoneCrackDebugLog)
+                local last = BoneCrackDebugLog[#BoneCrackDebugLog]
+                check(last:find("party1 HIT  520 1", 1, true) ~= nil, "last line is not the newest: " .. tostring(last))
+            end)
+            SlashCmdList["BONECRACK"]("debug")
+            if not ok then error(err, 0) end
+        end)
+
+        run("debug off keeps the log and debug on clears it", function()
+            check(#BoneCrackDebugLog == 500, "debug off did not keep the log")
+            combatLine(1)
+            check(#BoneCrackDebugLog == 500, "a line was logged while debug was off")
+            SlashCmdList["BONECRACK"]("debug")
+            local count = #BoneCrackDebugLog
+            SlashCmdList["BONECRACK"]("debug")
+            check(count == 0, "expected an empty log after debug on, got " .. count)
+        end)
+
+        run("clearlog empties the log", function()
+            SlashCmdList["BONECRACK"]("debug")
+            local ok, err = pcall(function()
+                combatLine(1)
+                check(#BoneCrackDebugLog == 1, "expected 1 line, got " .. #BoneCrackDebugLog)
+                SlashCmdList["BONECRACK"]("clearlog")
+                check(#BoneCrackDebugLog == 0, "log was not cleared")
+            end)
+            SlashCmdList["BONECRACK"]("debug")
+            if not ok then error(err, 0) end
+        end)
+
         -- WOUND checks. The first one that fires a readable UNIT_COMBAT sets woundsReadable for the
         -- rest of the run, so no check that needs it false may come after this point.
         local function wound()

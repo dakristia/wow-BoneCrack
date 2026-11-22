@@ -4,5 +4,6 @@
 ## Author: Daniel
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1823372
+## SavedVariables: BoneCrackDebugLog
 
 BoneCrack.lua
