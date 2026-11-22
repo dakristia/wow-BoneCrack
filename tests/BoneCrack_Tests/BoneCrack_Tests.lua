@@ -81,13 +81,13 @@ local function withHealth(frame, opts, fn)
 end
 
 -- Runs fn(state, step) with the fall APIs stubbed on a later fake clock, and returns the recorded plays.
--- state has hidden, swimming and flying, which the test can edit. step(time, falling) sets the fake
+-- state has hidden, swimming, flying and combat, which the test can edit. step(time, falling) sets the fake
 -- clock and IsFalling, then calls the addon's OnUpdate.
 -- The addon's wasFalling state persists between checks, and the earlier checks leave it true. So the
 -- helper first steps with IsFalling false and readable health, which makes the addon call landed()
 -- without a play, and every check ends with a step where IsFalling is false.
 local function withFall(frame, fn)
-    local state = { hidden = false, swimming = false, flying = false }
+    local state = { hidden = false, swimming = false, flying = false, combat = false }
     local now, falling = 0, false
     return record(function()
         withLaterClock(function()
@@ -97,6 +97,7 @@ local function withFall(frame, fn)
                 IsFalling = function() return falling end,
                 IsSwimming = function() return state.swimming end,
                 IsFlying = function() return state.flying end,
+                UnitAffectingCombat = function() return state.combat end,
                 UnitHealth = function() return state.hidden and "SECRET" or 100 end,
                 issecretvalue = function(v) return state.hidden and v == "SECRET" end,
             }, function()
@@ -386,6 +387,19 @@ local function runAll()
             return result
         end
 
+        -- This check must fire the first readable UNIT_COMBAT, because it covers a login where the
+        -- addon has not seen one yet.
+        run("hidden health, 1.4s fall and the first WOUND 0.2s after landing plays the sound", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                step(10, true)
+                step(11.4, false)
+                step(11.6, false)
+                wound()
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
         run("hidden health, 1.2s fall and a WOUND 0.1s before landing plays the sound", function()
             local calls = soloFall(function(state, step)
                 state.hidden = true
@@ -441,6 +455,30 @@ local function runAll()
                 wound()
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("in combat, hidden health, 1.2s fall and a WOUND at landing stays silent", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                state.combat = true
+                step(10, true)
+                step(11.1, true)
+                wound()
+                step(11.2, false)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("in combat, hidden health, 2.0s fall and a WOUND at landing plays the sound", function()
+            local calls = soloFall(function(state, step)
+                state.hidden = true
+                state.combat = true
+                step(10, true)
+                step(11.9, true)
+                wound()
+                step(12, false)
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
         end)
     end
 

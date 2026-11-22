@@ -13,7 +13,8 @@ local MIN_FALL_SECONDS = 1.0
 -- this close to the landing counts as the fall's damage.
 local WOUND_WINDOW = 0.5
 -- Falling damage starts at about 14.6 yards. A jump followed by that drop takes about 1.6 seconds,
--- so this is the stand-in for damage when the client hides both health and UNIT_COMBAT.
+-- so this is the stand-in for damage when the client hides both health and UNIT_COMBAT. In combat a
+-- mob's hit is also a WOUND, so a landing in combat needs this much air time too.
 local FALL_SECONDS = 1.6
 -- The debug probe samples party positions this often and logs height changes bigger than this.
 local PROBE_INTERVAL = 0.2
@@ -96,18 +97,19 @@ local function landed()
     local duration = now - fallStart
     local hidden = not readable(UnitHealth("player"))
     local water = IsSwimming() or IsFlying()
+    local combat = UnitAffectingCombat("player")
     log("landed after", duration, "seconds, health hidden:", hidden, "swimming or flying:", water,
-        "wounds readable:", woundsReadable)
-    if not hidden or water or duration < MIN_FALL_SECONDS then return end
-    if woundsReadable then
-        if now - lastWound <= WOUND_WINDOW then
-            playerFell()
-        else
-            -- The WOUND for this landing may still be on its way.
-            pendingLanding = now
-        end
-    elseif duration >= FALL_SECONDS then
+        "wounds readable:", woundsReadable, "in combat:", combat)
+    local minimum = combat and FALL_SECONDS or MIN_FALL_SECONDS
+    if not hidden or water or duration < minimum then return end
+    if now - lastWound <= WOUND_WINDOW then
         playerFell()
+    elseif not woundsReadable and duration >= FALL_SECONDS then
+        playerFell()
+    else
+        -- The WOUND for this landing may still be on its way. woundsReadable is false after a login
+        -- until the first readable UNIT_COMBAT, so that first WOUND can come from this landing too.
+        pendingLanding = now
     end
 end
 
