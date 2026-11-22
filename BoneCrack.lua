@@ -19,6 +19,8 @@ local FALL_SECONDS = 1.6
 -- The debug probe samples party positions this often and logs height changes bigger than this.
 local PROBE_INTERVAL = 0.2
 local PROBE_MIN_DROP = 2
+-- The saved log keeps only the newest lines so the SavedVariables file stays small.
+local DEBUG_LOG_MAX = 500
 
 local lastPlayed = 0
 local lastFalling = -math.huge
@@ -45,6 +47,11 @@ local function log(...)
         if not readable(parts[i]) then parts[i] = "<secret>" else parts[i] = tostring(parts[i]) end
     end
     print("|cffff8800BoneCrack|r", unpack(parts, 1, select("#", ...)))
+    if type(BoneCrackDebugLog) ~= "table" then BoneCrackDebugLog = {} end
+    local text = table.concat(parts, " ", 1, select("#", ...))
+    local clock = date and date("%H:%M:%S") or ""
+    BoneCrackDebugLog[#BoneCrackDebugLog + 1] = clock .. " " .. string.format("%.2f", GetTime()) .. " " .. text
+    while #BoneCrackDebugLog > DEBUG_LOG_MAX do table.remove(BoneCrackDebugLog, 1) end
 end
 
 local function play()
@@ -206,7 +213,13 @@ SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
     if message == "debug" then
         debugging = not debugging
-        print("BoneCrack debug " .. (debugging and "on" or "off"))
+        -- Turning debug on starts a clean log. Turning it off keeps the log, so a /reload afterwards
+        -- writes the session to the SavedVariables file.
+        if debugging then BoneCrackDebugLog = {} end
+        print("BoneCrack debug " .. (debugging and "on, log cleared" or "off"))
+    elseif message == "clearlog" then
+        BoneCrackDebugLog = {}
+        print("BoneCrack debug log cleared")
     else
         play()
     end
