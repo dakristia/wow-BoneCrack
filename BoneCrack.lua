@@ -155,6 +155,18 @@ local function probePositions(now)
     end
 end
 
+-- Debug only: logs what the distance APIs return for each party member, to find out which of them
+-- give readable values on this client before the distance tiers rely on them.
+local function probeDistance()
+    log("player map", C_Map.GetBestMapForUnit("player"), "sound channels", GetCVar("Sound_NumChannels"))
+    for i = 1, GetNumSubgroupMembers() do
+        local unit = "party" .. i
+        local inRange, checked = UnitInRange(unit)
+        log(unit, UnitName(unit), "in range:", inRange, "checked:", checked,
+            "visible:", UnitIsVisible(unit), "map:", C_Map.GetBestMapForUnit(unit))
+    end
+end
+
 local function onHealth(unit)
     local loss = healthLost(unit)
     if not loss then return end
@@ -173,6 +185,7 @@ local function onAddonMessage(prefix, text, _, sender)
     -- The sender hears its own message too, and already played the sound.
     if Ambiguate(sender, "none") == UnitName("player") then return end
     log("fall message from", sender)
+    probeDistance()
     play()
 end
 
@@ -217,6 +230,9 @@ SlashCmdList["BONECRACK"] = function(message)
         -- writes the session to the SavedVariables file.
         if debugging then BoneCrackDebugLog = {} end
         print("BoneCrack debug " .. (debugging and "on, log cleared" or "off"))
+        probeDistance()
+    elseif message == "probe" then
+        probeDistance()
     elseif message == "clearlog" then
         BoneCrackDebugLog = {}
         print("BoneCrack debug log cleared")
