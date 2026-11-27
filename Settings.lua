@@ -29,8 +29,9 @@ local function newSlider(parent)
     return CreateFrame("Slider", nil, parent)
 end
 
--- Adds a slider that saves its value to BoneCrackSettings[key] while it is dragged. It returns the
--- refresh function that reads the saved value. format turns a value into the label text.
+-- Adds a slider that saves its value to BoneCrackSettings[key] while it is dragged, with a box next to
+-- it for typing an exact value, because a slider is hard to stop on one value. It returns the slider
+-- and the refresh function that reads the saved value. format turns a value into the label text.
 local function addSlider(f, y, key, name, low, high, step, format)
     local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("TOPLEFT", 24, y)
@@ -41,13 +42,33 @@ local function addSlider(f, y, key, name, low, high, step, format)
     s:SetMinMaxValues(low, high)
     s:SetValueStep(step)
     if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    local box = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    box:SetSize(50, 20)
+    box:SetPoint("LEFT", s, "RIGHT", 16, 0)
+    box:SetAutoFocus(false)
     local refreshing = false
-    local function show(v) label:SetText(name .. ": " .. format(v)) end
+    local function show(v)
+        label:SetText(name .. ": " .. format(v))
+        if not box:HasFocus() then box:SetText(tostring(tonumber(string.format("%.2f", v)))) end
+    end
     s:SetScript("OnValueChanged", function(_, v)
         show(v)
         if refreshing then return end
         if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
         BoneCrackSettings[key] = tonumber(string.format("%.2f", v))
+    end)
+    -- A typed value snaps to the slider's range and step, and a value that is not a number is dropped.
+    box:SetScript("OnEnterPressed", function(self)
+        local v = tonumber(self:GetText())
+        self:ClearFocus()
+        if not v then show(ns.soundSetting(key)) return end
+        v = math.max(low, math.min(high, math.floor(v / step + 0.5) * step))
+        s:SetValue(v)
+        show(v)
+    end)
+    box:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        show(ns.soundSetting(key))
     end)
     local function refresh()
         refreshing = true
@@ -56,6 +77,35 @@ local function addSlider(f, y, key, name, low, high, step, format)
         refreshing = false
     end
     return s, refresh
+end
+
+-- The modern client has the WowStyle1 dropdown, and an older one only has UIDropDownMenu, so this
+-- builds whichever exists. It returns the refresh function that shows the saved channel.
+local function addChannelDropdown(f, y)
+    local function choose(name) SlashCmdList["BONECRACK"]("channel " .. name) end
+    local ok, d = pcall(CreateFrame, "DropdownButton", nil, f, "WowStyle1DropdownTemplate")
+    if ok and d and d.SetupMenu then
+        d:SetWidth(160)
+        d:SetPoint("TOPLEFT", 24, y)
+        d:SetupMenu(function(_, root)
+            for _, name in ipairs(ns.CHANNELS) do
+                root:CreateRadio(name, function() return ns.soundSetting("channel") == name end, function() choose(name) end)
+            end
+        end)
+        return function() if d.GenerateMenu then d:GenerateMenu() end end
+    end
+    d = CreateFrame("Frame", "BoneCrackChannelDropdown", f, "UIDropDownMenuTemplate")
+    d:SetPoint("TOPLEFT", 8, y + 2)
+    UIDropDownMenu_SetWidth(d, 140)
+    UIDropDownMenu_Initialize(d, function()
+        for _, name in ipairs(ns.CHANNELS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text, info.checked = name, ns.soundSetting("channel") == name
+            info.func = function() choose(name) UIDropDownMenu_SetText(d, name) end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    return function() UIDropDownMenu_SetText(d, ns.soundSetting("channel")) end
 end
 
 -- Builds the Sound section from y and returns the next free y and the functions that refresh its controls.
@@ -79,9 +129,11 @@ local function buildSound(f, y)
     end
     for i, scope in ipairs({ "person", "group" }) do
         local box = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-        box:SetPoint("TOPLEFT", 24 + (i - 1) * 180, y)
+        box:SetPoint("TOPLEFT", 24 + (i - 1) * 240, y)
         local text = box.text or box.Text
-        if text then text:SetText(scope == "person" and "Cooldown per person" or "Cooldown for the whole group") end
+        if text then
+            text:SetText(scope == "person" and "Individual cooldown per person" or "Shared cooldown for the entire group/raid")
+        end
         box:SetScript("OnClick", function()
             SlashCmdList["BONECRACK"]("cooldownscope " .. scope)
             refreshScopes()
@@ -89,7 +141,7 @@ local function buildSound(f, y)
         scopes[scope] = box
     end
     refreshers[#refreshers + 1] = refreshScopes
-    y = y - 30
+    y = y - 48
 
     local capSlider, refreshCap = addSlider(f, y, "cap", "Cracks per second", 0, 40, 1,
         function(v) return v == 0 and "Off" or string.format("%d", v) end)
@@ -108,36 +160,16 @@ local function buildSound(f, y)
     local channelLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     channelLabel:SetPoint("TOPLEFT", 24, y)
     channelLabel:SetText("Sound channel")
-    y = y - 20
-    local buttons = {}
-    for i, name in ipairs(ns.CHANNELS) do
-        local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-        b:SetSize(84, 22)
-        b:SetPoint("TOPLEFT", 24 + (i - 1) * 88, y)
-        b:SetScript("OnClick", function()
-            SlashCmdList["BONECRACK"]("channel " .. name)
-            for _, other in ipairs(buttons) do other.refresh() end
-        end)
-        b.refresh = function()
-            b:SetText(ns.soundSetting("channel") == name and ("[" .. name .. "]") or name)
-        end
-        buttons[i] = b
-    end
-    refreshers[#refreshers + 1] = function() for _, b in ipairs(buttons) do b.refresh() end end
-    y = y - 40
+    y = y - 22
+    refreshers[#refreshers + 1] = addChannelDropdown(f, y)
+    y = y - 44
     return y, refreshers
 end
 
 local function build()
     local f = CreateFrame("Frame")
-    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("BoneCrack")
-    local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    note:SetText("BoneCrack plays the sound out of the box. Everything below is off until you turn it on.")
     local boxes = {}
-    local y, refreshers = buildSound(f, -56)
+    local y, refreshers = buildSound(f, -16)
     for _, section in ipairs(SECTIONS) do
         local heading = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         heading:SetPoint("TOPLEFT", 16, y)
