@@ -714,16 +714,28 @@ local function runAll()
             end)
         end)
 
-        run("the player's own pop-up also needs /bonecrack selfpopup", function()
+        run("/bonecrack selfpopup alone shows only the player's own pop-up", function()
             popups(function(shown)
-                SlashCmdList["BONECRACK"]("popups")
-                ns.onFall("player", { air = 3, dead = false })
-                ns.onFall("Glue", { air = 3, dead = true })
-                check(#shown == 1 and shown[1].who == "Glue" and shown[1].tier == 3, "expected only Glue's death pop-up")
                 SlashCmdList["BONECRACK"]("selfpopup")
                 ns.onFall("player", { air = 3, dead = false })
-                check(#shown == 2 and shown[2].who == "player", "expected the player's pop-up after selfpopup")
+                ns.onFall("Glue", { air = 3, dead = true })
+                check(#shown == 1 and shown[1].who == "player", "expected only the player's pop-up")
             end)
+        end)
+
+        run("in a raid a member's pop-up needs /bonecrack raidpopups, not popups", function()
+            local savedIsInRaid = IsInRaid
+            IsInRaid = function() return true end
+            local ok, err = pcall(popups, function(shown)
+                SlashCmdList["BONECRACK"]("popups")
+                ns.onFall("Glue", { air = 3, dead = false })
+                check(#shown == 0, "expected no pop-up with only party pop-ups on")
+                SlashCmdList["BONECRACK"]("raidpopups")
+                ns.onFall("Glue", { air = 3, dead = false })
+                check(#shown == 1 and shown[1].who == "Glue", "expected Glue's raid pop-up")
+            end)
+            IsInRaid = savedIsInRaid
+            if not ok then error(err, 0) end
         end)
 
         run("/bonecrack test party2 death shows a death pop-up on party2", function()

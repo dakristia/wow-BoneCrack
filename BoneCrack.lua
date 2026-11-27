@@ -375,6 +375,13 @@ local function testPopup(message)
     if not ns.showPopup(who, t) then print("BoneCrack: no Blizzard frame shows " .. who) end
 end
 
+-- Each pop-up command toggles one saved setting, and the name is what the chat message calls it.
+local POPUP_COMMANDS = {
+    popups = { "popups", "party pop-ups" },
+    raidpopups = { "popupRaid", "raid pop-ups" },
+    selfpopup = { "popupSelf", "your own pop-ups" },
+}
+
 SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
     message = message or ""
@@ -399,12 +406,11 @@ SlashCmdList["BONECRACK"] = function(message)
         else
             print("BoneCrack is off in instances")
         end
-    elseif message == "popups" or message == "selfpopup" then
-        local key = message == "popups" and "popups" or "popupSelf"
+    elseif POPUP_COMMANDS[message] then
+        local key, name = POPUP_COMMANDS[message][1], POPUP_COMMANDS[message][2]
         if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
         BoneCrackSettings[key] = not ns.popupSetting(key)
-        print("BoneCrack " .. (key == "popups" and "pop-ups" or "pop-up for your own falls") .. " "
-            .. (BoneCrackSettings[key] and "on" or "off"))
+        print("BoneCrack " .. name .. " " .. (BoneCrackSettings[key] and "on" or "off"))
     elseif message == "panel" then
         ns.togglePanel()
     elseif message:match("^test") then

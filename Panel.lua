@@ -8,11 +8,14 @@ end
 local TIERS = { "small", "medium", "big", "death" }
 local UNITS = { "player", "party1", "party2", "party3", "party4" }
 -- The toggles are the slash commands that turn a setting on or off.
-local TOGGLES = { { "Pop-ups", "popups" }, { "Own pop-up", "selfpopup" }, { "Instances", "instances" }, { "Debug", "debug" } }
+local TOGGLES = {
+    { "Party", "popups" }, { "Raid", "raidpopups" }, { "Own", "selfpopup" }, { "Instances", "instances" }, { "Debug", "debug" },
+}
 local panel
 
 local function toggleState(command)
     if command == "popups" then return ns.popupSetting("popups") end
+    if command == "raidpopups" then return ns.popupSetting("popupRaid") end
     if command == "selfpopup" then return ns.popupSetting("popupSelf") end
     if command == "instances" then return type(BoneCrackSettings) == "table" and BoneCrackSettings.instances end
     return BoneCrackDebug
@@ -55,7 +58,7 @@ local function build()
     heading:SetPoint("TOPLEFT", 14, -200)
     heading:SetText("Settings (saved)")
     for i, t in ipairs(TOGGLES) do
-        local b = button(f, t[1], 14 + (i - 1) * 100, -218, 96, t[2])
+        local b = button(f, t[1], 14 + (i - 1) * 80, -218, 78, t[2])
         local function refresh() b:SetText(t[1] .. ": " .. (toggleState(t[2]) and "on" or "off")) end
         b:SetScript("OnClick", function() run(t[2]) refresh() end)
         b:SetScript("OnShow", refresh)

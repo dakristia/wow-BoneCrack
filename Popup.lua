@@ -36,9 +36,10 @@ local CHIPS = 4
 local BONE_X, BONE_Y = -30, -6
 local WORD_X, WORD_Y = -4, 18
 
--- Both pop-ups start off because out of the box BoneCrack only plays the sound, and a player turns
--- them on with a slash command or the panel.
-local defaults = { popups = false, popupSelf = false }
+-- The pop-ups start off because out of the box BoneCrack only plays the sound, and a player turns
+-- them on with a slash command or the options page. Party, raid and own pop-ups are separate, because
+-- many pop-ups at once in a raid can be too much for a player who likes them in a party.
+local defaults = { popups = false, popupRaid = false, popupSelf = false }
 local pool = {}
 
 local function setting(key)
@@ -225,8 +226,8 @@ function ns.showPopup(who, tier)
 end
 
 function ns.onFall(who, info)
-    if not setting("popups") then return end
-    if who == "player" and not setting("popupSelf") then return end
+    local key = who == "player" and "popupSelf" or (IsInRaid() and "popupRaid" or "popups")
+    if not setting(key) then return end
     ns.showPopup(who, ns.fallTier(info))
 end
 
