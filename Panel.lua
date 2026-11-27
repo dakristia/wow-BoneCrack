@@ -11,6 +11,13 @@ local UNITS = { "player", "party1", "party2", "party3", "party4" }
 local TOGGLES = { { "Pop-ups", "popups" }, { "Own pop-up", "selfpopup" }, { "Instances", "instances" }, { "Debug", "debug" } }
 local panel
 
+local function toggleState(command)
+    if command == "popups" then return ns.popupSetting("popups") end
+    if command == "selfpopup" then return ns.popupSetting("popupSelf") end
+    if command == "instances" then return type(BoneCrackSettings) == "table" and BoneCrackSettings.instances end
+    return BoneCrackDebug
+end
+
 local function button(parent, text, x, y, w, command)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(w, 22)
@@ -41,8 +48,17 @@ local function build()
     end
     button(f, "Group fall", 14, -168, 120, "test group")
     button(f, "Play crack", 140, -168, 120, "")
+    -- The settings get their own heading and show their state, so a player sees that these buttons
+    -- change saved settings and do not just test something.
+    local heading = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    heading:SetPoint("TOPLEFT", 14, -200)
+    heading:SetText("Settings (saved)")
     for i, t in ipairs(TOGGLES) do
-        button(f, t[1], 14 + (i - 1) * 100, -206, 96, t[2])
+        local b = button(f, t[1], 14 + (i - 1) * 100, -218, 96, t[2])
+        local function refresh() b:SetText(t[1] .. ": " .. (toggleState(t[2]) and "on" or "off")) end
+        b:SetScript("OnClick", function() run(t[2]) refresh() end)
+        b:SetScript("OnShow", refresh)
+        refresh()
     end
     tinsert(UISpecialFrames, "BoneCrackPanel")
     return f
