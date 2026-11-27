@@ -340,8 +340,29 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+local TEST_TIERS = { small = 0, medium = 1, big = 2, death = 3 }
+
+-- /bonecrack test [player|party1-4|group] [small|medium|big|death] shows a pop-up without a fall, so
+-- the pop-ups can be checked alone. The group form gives every member a different tier.
+local function testPopup(message)
+    local who, tier = message:match("^test%s*(%S*)%s*(%S*)")
+    if who == "group" then
+        ns.showPopup("player", 1)
+        for i = 1, GetNumSubgroupMembers() do ns.showPopup("party" .. i, i % 4) end
+        return
+    end
+    if who == "" then who = "player" end
+    local t = TEST_TIERS[tier ~= "" and tier or "medium"]
+    if not t then
+        print("BoneCrack: /bonecrack test [player|party1-4|group] [small|medium|big|death]")
+        return
+    end
+    if not ns.showPopup(who, t) then print("BoneCrack: no Blizzard frame shows " .. who) end
+end
+
 SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
+    message = message or ""
     if message == "debug" then
         debugging = not debugging
         -- The setting is saved so debug stays on after a /reload. The log is not cleared here because
@@ -354,6 +375,14 @@ SlashCmdList["BONECRACK"] = function(message)
     elseif message == "clearlog" then
         BoneCrackDebugLog = {}
         print("BoneCrack debug log cleared")
+    elseif message == "popups" or message == "selfpopup" then
+        local key = message == "popups" and "popups" or "popupSelf"
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings[key] = not ns.popupSetting(key)
+        print("BoneCrack " .. (key == "popups" and "pop-ups" or "pop-up for your own falls") .. " "
+            .. (BoneCrackSettings[key] and "on" or "off"))
+    elseif message:match("^test") then
+        testPopup(message)
     else
         play()
     end

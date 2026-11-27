@@ -685,6 +685,56 @@ local function runAll()
         end)
     end
 
+    do
+        local ns = BoneCrackNS
+        -- Replaces ns.showPopup with a recorder while fn runs, and starts from default settings.
+        local function popups(fn)
+            local original, saved = ns.showPopup, BoneCrackSettings
+            local shown = {}
+            ns.showPopup = function(who, tier) shown[#shown + 1] = { who = who, tier = tier } return true end
+            BoneCrackSettings = nil
+            local ok, err = pcall(fn, shown)
+            ns.showPopup, BoneCrackSettings = original, saved
+            if not ok then error(err, 0) end
+        end
+
+        run("a party member's fall shows a pop-up at its damage tier", function()
+            popups(function(shown)
+                ns.onFall("Glue", { loss = 0.4, air = 3, dead = false })
+                check(#shown == 1 and shown[1].who == "Glue" and shown[1].tier == 2, "expected one big pop-up for Glue")
+            end)
+        end)
+
+        run("/bonecrack popups turns every pop-up off", function()
+            popups(function(shown)
+                SlashCmdList["BONECRACK"]("popups")
+                ns.onFall("Glue", { air = 3, dead = false })
+                ns.onFall("player", { air = 3, dead = false })
+                check(#shown == 0, "expected no pop-ups, got " .. #shown)
+            end)
+        end)
+
+        run("/bonecrack selfpopup turns off only the player's own pop-up", function()
+            popups(function(shown)
+                SlashCmdList["BONECRACK"]("selfpopup")
+                ns.onFall("player", { air = 3, dead = false })
+                ns.onFall("Glue", { air = 3, dead = true })
+                check(#shown == 1 and shown[1].who == "Glue" and shown[1].tier == 3, "expected only Glue's death pop-up")
+            end)
+        end)
+
+        run("/bonecrack test party2 death shows a death pop-up on party2", function()
+            popups(function(shown)
+                SlashCmdList["BONECRACK"]("test party2 death")
+                check(#shown == 1 and shown[1].who == "party2" and shown[1].tier == 3, "expected a death pop-up on party2")
+            end)
+        end)
+
+        run("showPopup without a group frame returns false and does not error", function()
+            check(ns.showPopup("party3", 1) == false, "expected false for a missing party3")
+        end)
+    end
+
     __wowless.printf("RESULT %d passed, %d failed\n", passed, failed)
     __wowless.quit(failed == 0 and 0 or 1)
 end
