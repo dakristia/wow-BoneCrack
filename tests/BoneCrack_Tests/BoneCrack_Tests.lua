@@ -730,6 +730,29 @@ local function runAll()
             end)
         end)
 
+        run("in an instance BoneCrack ignores fall messages until /bonecrack instances turns it on", function()
+            local saved = BoneCrackSettings
+            BoneCrackSettings = nil
+            local frame = findAddonFrame()
+            local handler = frame:GetScript("OnEvent")
+            local function send()
+                return record(function()
+                    withLaterClock(function()
+                        handler(frame, "CHAT_MSG_ADDON", "BoneCrack", "fell", "PARTY", "Glue-Realm")
+                    end)
+                end)
+            end
+            local first, second
+            withStubs({ IsInInstance = function() return true, "party" end }, function()
+                first = send()
+                SlashCmdList["BONECRACK"]("instances")
+                second = send()
+            end)
+            BoneCrackSettings = saved
+            check(#first == 0, "expected no sound in an instance by default, got " .. #first)
+            check(#second == 1, "expected one sound after /bonecrack instances, got " .. #second)
+        end)
+
         run("showPopup without a group frame returns false and does not error", function()
             check(ns.showPopup("party3", 1) == false, "expected false for a missing party3")
         end)

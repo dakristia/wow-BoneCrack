@@ -17,5 +17,6 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 - `/bonecrack debug` turns debug logging on or off. WoW remembers the setting across sessions. Debug prints nothing to chat. It saves what the addon sees to `BoneCrackDebugLog` in the SavedVariables file, which WoW writes on /reload or logout. The log is kept between sessions and holds at most the newest 500 lines. Read it with `bin/debuglog BoneCrack` from wow-addon-workshop.
 - `/bonecrack clearlog` clears the saved debug log.
 - `/bonecrack popups` turns the pop-ups on or off. A pop-up shows on the Blizzard party, raid or player frame of whoever fell, and it grows with the damage. Players without Blizzard frames get no pop-up.
+- `/bonecrack instances` turns BoneCrack on or off inside dungeons, raids and other instances. It is off by default, because instances hide more from addons and BoneCrack may cause Lua errors there.
 - `/bonecrack selfpopup` turns the pop-up for your own falls on or off.
 - `/bonecrack test [player|party1-4|group] [small|medium|big|death]` shows a pop-up without a fall.

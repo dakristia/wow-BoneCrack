@@ -300,12 +300,24 @@ end
 
 C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
+-- Instances hide more of the game from addons as secret values, so BoneCrack stays off there unless
+-- the player turns it on with /bonecrack instances and accepts that it may cause errors.
+local function paused()
+    local inside = IsInInstance()
+    if not readable(inside) or not inside then return false end
+    return not (type(BoneCrackSettings) == "table" and BoneCrackSettings.instances)
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("UNIT_HEALTH")
 frame:RegisterEvent("UNIT_COMBAT")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:SetScript("OnUpdate", function()
+    if paused() then
+        wasFalling = false
+        return
+    end
     local now = GetTime()
     local falling = IsFalling() and true or false
     if falling then lastFalling = now end
@@ -318,6 +330,7 @@ frame:SetScript("OnUpdate", function()
     if debugging then probePositions(now) end
 end)
 frame:SetScript("OnEvent", function(_, event, ...)
+    if event ~= "ADDON_LOADED" and paused() then return end
     if event == "CHAT_MSG_ADDON" then
         onAddonMessage(...)
         return
@@ -377,6 +390,15 @@ SlashCmdList["BONECRACK"] = function(message)
     elseif message == "clearlog" then
         BoneCrackDebugLog = {}
         print("BoneCrack debug log cleared")
+    elseif message == "instances" then
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings.instances = not BoneCrackSettings.instances
+        if BoneCrackSettings.instances then
+            print("BoneCrack is now on in instances. Instances hide more from addons, so BoneCrack may cause"
+                .. " Lua errors there. Use it at your own risk, and /bonecrack instances turns it off again.")
+        else
+            print("BoneCrack is off in instances")
+        end
     elseif message == "popups" or message == "selfpopup" then
         local key = message == "popups" and "popups" or "popupSelf"
         if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
