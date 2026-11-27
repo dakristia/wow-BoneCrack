@@ -68,6 +68,7 @@ local function withHealth(frame, opts, fn)
                 IsFalling = function() return opts.falling or false end,
                 UnitIsUnit = function(a, b) return a == b end,
                 UnitAffectingCombat = function() return opts.combat or false end,
+                UnitIsVisible = function() return not opts.far end,
             }, function()
                 local function fire(unit, value)
                     hp[unit] = value
@@ -214,6 +215,15 @@ local function runAll()
             local calls = withHealth(frame, { combat = false }, function(fire)
                 fire("party3", 100)
                 fire("party3", 98)
+            end)
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+        end)
+
+        run("far-away party member losing 10% out of combat stays silent", function()
+            -- party5 is not visible to the client, so its combat flag cannot be trusted.
+            local calls = withHealth(frame, { combat = false, far = true }, function(fire)
+                fire("party5", 100)
+                fire("party5", 90)
             end)
             check(#calls == 0, "expected 0 plays, got " .. #calls)
         end)
@@ -381,7 +391,7 @@ local function runAll()
         run("debug on saves a line to BoneCrackDebugLog", function()
             SlashCmdList["BONECRACK"]("debug")
             local ok, err = pcall(function()
-                check(type(BoneCrackDebugLog) == "table" and #BoneCrackDebugLog == 0, "log was not cleared on debug on")
+                BoneCrackDebugLog = {}
                 combatLine(1)
                 check(#BoneCrackDebugLog == 1, "expected 1 line, got " .. #BoneCrackDebugLog)
                 check(BoneCrackDebugLog[1]:find("UNIT_COMBAT party1", 1, true) ~= nil,
@@ -403,19 +413,43 @@ local function runAll()
             if not ok then error(err, 0) end
         end)
 
-        run("debug off keeps the log and debug on clears it", function()
+        run("debug off keeps the log and debug on no longer clears it", function()
             check(#BoneCrackDebugLog == 500, "debug off did not keep the log")
             combatLine(1)
             check(#BoneCrackDebugLog == 500, "a line was logged while debug was off")
             SlashCmdList["BONECRACK"]("debug")
             local count = #BoneCrackDebugLog
             SlashCmdList["BONECRACK"]("debug")
-            check(count == 0, "expected an empty log after debug on, got " .. count)
+            check(count == 500, "expected the log to stay at 500 lines after debug on, got " .. count)
+        end)
+
+        run("debug on sets BoneCrackDebug to true and off sets it to false", function()
+            SlashCmdList["BONECRACK"]("debug")
+            local onValue = BoneCrackDebug
+            SlashCmdList["BONECRACK"]("debug")
+            check(onValue == true, "expected BoneCrackDebug true after debug on, got " .. tostring(onValue))
+            check(BoneCrackDebug == false, "expected BoneCrackDebug false after debug off, got " .. tostring(BoneCrackDebug))
+        end)
+
+        run("debug does not print each log line to chat", function()
+            local printed = 0
+            local original = print
+            print = function() printed = printed + 1 end
+            SlashCmdList["BONECRACK"]("debug")
+            local ok, err = pcall(function()
+                local before = printed
+                combatLine(1)
+                check(printed == before, "log printed " .. (printed - before) .. " lines to chat")
+            end)
+            SlashCmdList["BONECRACK"]("debug")
+            print = original
+            if not ok then error(err, 0) end
         end)
 
         run("clearlog empties the log", function()
             SlashCmdList["BONECRACK"]("debug")
             local ok, err = pcall(function()
+                BoneCrackDebugLog = {}
                 combatLine(1)
                 check(#BoneCrackDebugLog == 1, "expected 1 line, got " .. #BoneCrackDebugLog)
                 SlashCmdList["BONECRACK"]("clearlog")

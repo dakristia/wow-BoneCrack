@@ -14,5 +14,5 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 ## Commands
 
 - `/bonecrack` plays the sound.
-- `/bonecrack debug` turns on chat output that shows what the addon sees. It also saves the last 500 lines to `BoneCrackDebugLog` in the SavedVariables file, which WoW writes on /reload or logout. Turning debug on clears that log.
+- `/bonecrack debug` turns debug logging on or off. WoW remembers the setting across sessions. Debug prints nothing to chat. It saves what the addon sees to `BoneCrackDebugLog` in the SavedVariables file, which WoW writes on /reload or logout. The log is kept between sessions and holds at most the newest 500 lines. Read it with `bin/debuglog BoneCrack` from wow-addon-workshop.
 - `/bonecrack clearlog` clears the saved debug log.

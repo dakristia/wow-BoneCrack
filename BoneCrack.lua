@@ -46,7 +46,6 @@ local function log(...)
     for i = 1, select("#", ...) do
         if not readable(parts[i]) then parts[i] = "<secret>" else parts[i] = tostring(parts[i]) end
     end
-    print("|cffff8800BoneCrack|r", unpack(parts, 1, select("#", ...)))
     if type(BoneCrackDebugLog) ~= "table" then BoneCrackDebugLog = {} end
     local text = table.concat(parts, " ", 1, select("#", ...))
     local clock = date and date("%H:%M:%S") or ""
@@ -158,6 +157,7 @@ end
 -- Debug only: logs what the distance APIs return for each party member, to find out which of them
 -- give readable values on this client before the distance tiers rely on them.
 local function probeDistance()
+    if not debugging then return end
     log("player map", C_Map.GetBestMapForUnit("player"), "sound channels", GetCVar("Sound_NumChannels"))
     for i = 1, GetNumSubgroupMembers() do
         local unit = "party" .. i
@@ -175,7 +175,14 @@ local function onHealth(unit)
         log("player lost", loss, "and was falling", sinceFalling, "seconds ago, window", LANDING_WINDOW)
         if sinceFalling <= LANDING_WINDOW then playerFell() end
     elseif loss >= GROUP_MIN_LOSS and not UnitAffectingCombat(unit) then
-        play()
+        -- UnitAffectingCombat is unreliable for a far-away member, so a member who is fighting on
+        -- another continent could look out of combat. UnitIsVisible is only true when the client can
+        -- see the unit, so it keeps those drops from playing the sound.
+        if UnitIsVisible(unit) then
+            play()
+        else
+            log(unit, "lost", loss, "but is not visible, so the drop was skipped")
+        end
     end
 end
 
@@ -192,6 +199,7 @@ end
 C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
 local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("UNIT_HEALTH")
 frame:RegisterEvent("UNIT_COMBAT")
 frame:RegisterEvent("CHAT_MSG_ADDON")
@@ -212,6 +220,15 @@ frame:SetScript("OnEvent", function(_, event, ...)
         onAddonMessage(...)
         return
     end
+    if event == "ADDON_LOADED" then
+        -- SavedVariables are only filled in once the addon has loaded, so the saved setting is read here.
+        if ... == PREFIX then
+            debugging = BoneCrackDebug == true
+            -- The log carries over between sessions, so this line marks where a new one starts.
+            log("session start")
+        end
+        return
+    end
     local unit = ...
     if type(unit) ~= "string" or not isGroupUnit(unit) then return end
     if event == "UNIT_HEALTH" then
@@ -226,10 +243,10 @@ SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
     if message == "debug" then
         debugging = not debugging
-        -- Turning debug on starts a clean log. Turning it off keeps the log, so a /reload afterwards
-        -- writes the session to the SavedVariables file.
-        if debugging then BoneCrackDebugLog = {} end
-        print("BoneCrack debug " .. (debugging and "on, log cleared" or "off"))
+        -- The setting is saved so debug stays on after a /reload. The log is not cleared here because
+        -- the 500-line cap keeps it small, and /bonecrack clearlog empties it.
+        BoneCrackDebug = debugging
+        print("BoneCrack debug " .. (debugging and "on" or "off"))
         probeDistance()
     elseif message == "probe" then
         probeDistance()
