@@ -10,6 +10,14 @@ local EDGE_OFFSET = 5
 
 local button
 
+local function onClick(_, mouse)
+    if mouse == "RightButton" then
+        ns.togglePanel()
+    elseif Settings and Settings.OpenToCategory and ns.settingsCategoryID then
+        Settings.OpenToCategory(ns.settingsCategoryID)
+    end
+end
+
 local function angle()
     local saved = type(BoneCrackSettings) == "table" and BoneCrackSettings.minimapAngle
     return type(saved) == "number" and saved or DEFAULT_ANGLE
@@ -49,13 +57,7 @@ local function create()
     border:SetPoint("TOPLEFT")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    button:SetScript("OnClick", function(_, mouse)
-        if mouse == "RightButton" then
-            ns.togglePanel()
-        elseif Settings and Settings.OpenToCategory and ns.settingsCategoryID then
-            Settings.OpenToCategory(ns.settingsCategoryID)
-        end
-    end)
+    button:SetScript("OnClick", onClick)
     button:SetScript("OnDragStart", function(self) self:SetScript("OnUpdate", dragTo) end)
     button:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
     button:SetScript("OnEnter", function(self)
@@ -70,9 +72,45 @@ local function create()
     place()
 end
 
+-- Button collectors such as EllesmereUI only gather LibDBIcon buttons, so BoneCrack registers through
+-- LibDBIcon when another addon has loaded it. BoneCrack does not ship the library, so without it the
+-- button falls back to its own frame. It returns the library, or nil when it is missing.
+local registered
+local function libIcon()
+    local stub = _G.LibStub
+    local ldb = stub and stub("LibDataBroker-1.1", true)
+    local icon = stub and stub("LibDBIcon-1.0", true)
+    if not (ldb and icon) then return nil end
+    if not registered then
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        if type(BoneCrackSettings.minimapIcon) ~= "table" then
+            BoneCrackSettings.minimapIcon = { minimapPos = angle() }
+        end
+        local object = ldb:NewDataObject("BoneCrack", {
+            type = "launcher",
+            icon = ICON,
+            OnClick = onClick,
+            OnTooltipShow = function(tip)
+                tip:AddLine("BoneCrack")
+                tip:AddLine("Left-click: options", 1, 1, 1)
+                tip:AddLine("Right-click: test panel", 1, 1, 1)
+            end,
+        })
+        icon:Register("BoneCrack", object, BoneCrackSettings.minimapIcon)
+        registered = true
+    end
+    return icon
+end
+
 -- Shows or hides the button to match the saved setting. The button is only built the first time it is needed.
 function ns.updateMinimap()
     if not Minimap then return end
+    local icon = libIcon()
+    if icon then
+        BoneCrackSettings.minimapIcon.hide = not ns.popupSetting("minimap")
+        if ns.popupSetting("minimap") then icon:Show("BoneCrack") else icon:Hide("BoneCrack") end
+        return
+    end
     if ns.popupSetting("minimap") then
         if not button then create() end
         place()

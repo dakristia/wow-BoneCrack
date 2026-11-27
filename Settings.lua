@@ -145,9 +145,11 @@ local function buildSound(f, y)
 
     local capSlider, refreshCap = addSlider(f, y, "cap", "Cracks per second", 0, 40, 1,
         function(v) return v == 0 and "Off" or string.format("%d", v) end)
+    -- The warning sits to the right of the value box, so it takes no row of its own and the rows keep
+    -- the same spacing whether it shows or not.
     local warning = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    warning:SetPoint("TOPLEFT", 24, y - 40)
-    warning:SetWidth(400)
+    warning:SetPoint("LEFT", capSlider, "RIGHT", 82, 0)
+    warning:SetWidth(320)
     warning:SetJustifyH("LEFT")
     warning:SetTextColor(1, 0.2, 0.2)
     local function refreshWarning() warning:SetText(ns.capWarning() or "") end
@@ -155,7 +157,7 @@ local function buildSound(f, y)
     -- The chat message prints when the player lets go, so dragging does not fill the chat.
     capSlider:HookScript("OnMouseUp", function() if ns.capWarning() then print(ns.capWarning()) end end)
     refreshers[#refreshers + 1] = function() refreshCap() refreshWarning() end
-    y = y - SLIDER_ROW - 18
+    y = y - SLIDER_ROW
 
     local channelLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     channelLabel:SetPoint("TOPLEFT", 24, y)
