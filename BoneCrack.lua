@@ -278,7 +278,8 @@ local function onAddonMessage(prefix, text, _, sender)
     if text ~= "fell" and not details then return end
     if not readable(sender) then return end
     -- The sender hears its own message too, and already played the sound.
-    if Ambiguate(sender, "none") == UnitName("player") then return end
+    local me = UnitName("player")
+    if readable(me) and Ambiguate(sender, "none") == me then return end
     local now = GetTime()
     if details then
         local info = ns.decodeFall(text)
@@ -340,6 +341,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- The test command takes tier names because they are easier to type than the numbers ns.fallTier returns.
 local TEST_TIERS = { small = 0, medium = 1, big = 2, death = 3 }
 
 -- /bonecrack test [player|party1-4|group] [small|medium|big|death] shows a pop-up without a fall, so

@@ -1,11 +1,13 @@
 local _, ns = ...
 
+-- The paths leave out the extension, so the client finds the .tga files.
 local MEDIA = "Interface\\AddOns\\BoneCrack\\media\\popup\\"
 -- The pop-up punches in from this many times its size, so a small fall gets a small punch and a big
 -- fall a big one. The index is the damage tier from ns.fallTier: small, medium, big, death.
 local PUNCH_FROM = { 1.4, 1.7, 2.1, 2.0 }
 -- The bone and the word grow with the damage tier, so the size alone tells how bad the fall was.
 local TIER_SCALE = { 0.75, 1.0, 1.25, 1.15 }
+-- The word for each damage tier, in the same order as the tables above.
 local WORDS = { "word_ow", "word_ouch", "word_ouch2", "word_crack" }
 -- The punch takes this long, then the pop-up holds for a moment and fades. The whole pop-up is gone
 -- after about half a second, so it never covers the frame while the player needs it.
@@ -18,12 +20,24 @@ local WORD_DELAY = 0.03
 local SNAP_SECONDS = 0.07
 -- The broken halves and splinters fall with this pull, in UI units per second squared.
 local GRAVITY = 260
+-- These sizes in UI units match the textures' 2:1 and 1:1 shapes, and they fit the end of a party
+-- frame that is about 140 by 50.
 local BONE_W, BONE_H = 64, 32
 local WORD_W, WORD_H = 76, 38
+-- The bone that snaps on death is drawn at one size, a little bigger than the medium tier, so the
+-- halves line up with it whatever the tier sizes are.
+local DEATH_W, DEATH_H = 72, 36
 local HALF_SIZE = 36
 local CHIP_SIZE = 9
+-- chips.tga holds this many splinters side by side, and each one flies off on its own.
 local CHIPS = 4
+-- The bone sits this far left of the frame's right edge and a little low, so the word fits above it
+-- and the name on the frame stays readable.
+local BONE_X, BONE_Y = -30, -6
+local WORD_X, WORD_Y = -4, 18
 
+-- Both pop-ups start on because the pop-up is how a player tells who fell, and either can be turned
+-- off with a slash command.
 local defaults = { popups = true, popupSelf = true }
 local pool = {}
 
@@ -96,16 +110,16 @@ end
 local function update(p, d)
     local tier, frame = p.tier, p.target
     local scale, from = TIER_SCALE[tier], PUNCH_FROM[tier]
-    local bx, by = -30, -6
+    local bx, by = BONE_X, BONE_Y
     local wd = d - WORD_DELAY
-    place(p.word, frame, -4, 18, WORD_W, WORD_H, scale * popScale(wd, from), wd < 0 and 0 or popAlpha(wd), -0.1)
+    place(p.word, frame, WORD_X, WORD_Y, WORD_W, WORD_H, scale * popScale(wd, from), wd < 0 and 0 or popAlpha(wd), -0.1)
     if tier < 4 then
         place(p.bone, frame, bx, by, BONE_W, BONE_H, scale * popScale(d, from), popAlpha(d), 0.25)
         return
     end
     local a = popAlpha(d)
     if d < SNAP_SECONDS then
-        place(p.bone, frame, bx, by, 72, 36, popScale(d, from), a, 0.25)
+        place(p.bone, frame, bx, by, DEATH_W, DEATH_H, popScale(d, from), a, 0.25)
         return
     end
     p.bone:Hide()
@@ -150,7 +164,8 @@ end
 -- Finds the Blizzard frame that shows the unit: the player frame, the party frames in either style,
 -- or the raid frames. Third-party frames are not supported, so this returns nil for them.
 local function frameFor(unit)
-    if UnitIsUnit(unit, "player") and shows(PlayerFrame, "player") then
+    local isMe = UnitIsUnit(unit, "player")
+    if ns.readable(isMe) and isMe and shows(PlayerFrame, "player") then
         -- The raid-style party frames also show the player, and they are where the group looks.
         for i = 1, 5 do
             local f = _G["CompactPartyFrameMember" .. i]
