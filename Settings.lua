@@ -172,9 +172,16 @@ local function buildSound(f, y)
     refreshers[#refreshers + 1] = addChannelDropdown(f, y)
     y = y - DROPDOWN_ROW
 
-    local _, refreshVolume = addSlider(f, y, "volume", "Volume", 10, 100, 10,
+    local volumeSlider, refreshVolume = addSlider(f, y, "volume", "Volume", 10, 100, 10,
         function(v) return string.format("%d%%", v) end)
     refreshers[#refreshers + 1] = refreshVolume
+    -- The play button runs the bare slash command, which skips the cooldown and the cap, so every
+    -- click plays the crack at the chosen volume and channel. It sits right of the value box.
+    local listen = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    listen:SetSize(60, 22)
+    listen:SetPoint("LEFT", volumeSlider, "RIGHT", 82, 0)
+    listen:SetText("Play")
+    listen:SetScript("OnClick", function() SlashCmdList["BONECRACK"]("") end)
     y = y - SLIDER_ROW
     return y, refreshers
 end
