@@ -1,10 +1,7 @@
 local _, ns = ...
 
--- The icon file is not in the addon yet. Switch the button to ICON when media/icon.tga lands.
+-- The button uses the addon's own icon, the same one the AddOns list and CurseForge show.
 local ICON = "Interface\\AddOns\\BoneCrack\\media\\icon"
--- This is a temporary built-in bone icon, because the client cannot tell an addon whether a file is
--- missing, and a missing file would show a green square.
-local FALLBACK_ICON = 134368
 -- The button sits at this angle on the minimap edge until the player drags it, and 225 degrees is the
 -- lower left, where it stays out of the way of the tracking and calendar buttons.
 local DEFAULT_ANGLE = 225
@@ -46,7 +43,7 @@ local function create()
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER", 1, -1)
-    icon:SetTexture(FALLBACK_ICON)
+    icon:SetTexture(ICON)
     local border = button:CreateTexture(nil, "OVERLAY")
     border:SetSize(53, 53)
     border:SetPoint("TOPLEFT")
