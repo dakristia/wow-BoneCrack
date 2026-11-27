@@ -16,8 +16,14 @@ local SECTIONS = {
 }
 -- Each checkbox takes this much height with its help line under it.
 local ROW = 44
--- A slider takes this much height with its label above it and room for a help line below.
-local SLIDER_ROW = 56
+-- A slider takes this much height with its label above it. Each step below the Sound heading was
+-- measured from a screenshot so the visible gap between the rows is the same, about 22 units.
+local SLIDER_ROW = 59
+-- A checkbox draws its box a little below its frame's top, so the row above it can sit closer.
+local SLIDER_TO_CHECKBOX = 52
+local CHECKBOX_TO_SLIDER = 51
+-- The dropdown is taller than its frame's anchor suggests, so the row under it needs more room.
+local DROPDOWN_ROW = 46
 
 -- The slider template differs between client versions, so this tries the modern one first and falls
 -- back to an older one, and to a bare slider if both are missing.
@@ -119,7 +125,7 @@ local function buildSound(f, y)
     local _, refreshCooldown = addSlider(f, y, "cooldown", "Cooldown", 0, 5, 0.1,
         function(v) return string.format("%.1f seconds", v) end)
     refreshers[#refreshers + 1] = refreshCooldown
-    y = y - SLIDER_ROW
+    y = y - SLIDER_TO_CHECKBOX
 
     -- The two boxes act as one choice, so the saved scope decides which of them is checked.
     local scopes = {}
@@ -141,7 +147,7 @@ local function buildSound(f, y)
         scopes[scope] = box
     end
     refreshers[#refreshers + 1] = refreshScopes
-    y = y - 48
+    y = y - CHECKBOX_TO_SLIDER
 
     local capSlider, refreshCap = addSlider(f, y, "cap", "Cracks per second", 0, 40, 1,
         function(v) return v == 0 and "Off" or string.format("%d", v) end)
@@ -164,7 +170,7 @@ local function buildSound(f, y)
     channelLabel:SetText("Sound channel")
     y = y - 22
     refreshers[#refreshers + 1] = addChannelDropdown(f, y)
-    y = y - 36
+    y = y - DROPDOWN_ROW
 
     local _, refreshVolume = addSlider(f, y, "volume", "Volume", 10, 100, 10,
         function(v) return string.format("%d%%", v) end)
@@ -173,8 +179,20 @@ local function buildSound(f, y)
     return y, refreshers
 end
 
+-- The page is taller than the options window, so the controls sit in a scroll frame. The scroll bar
+-- takes this much room on the right.
+local SCROLLBAR_WIDTH = 28
+
 local function build()
-    local f = CreateFrame("Frame")
+    local page = CreateFrame("Frame")
+    local scroll = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -SCROLLBAR_WIDTH, 4)
+    local f = CreateFrame("Frame", nil, scroll)
+    f:SetSize(600, 1)
+    scroll:SetScrollChild(f)
+    -- The scroll child has no anchors, so its width follows the page by hand.
+    page:SetScript("OnSizeChanged", function(_, w) f:SetWidth(math.max(1, w - SCROLLBAR_WIDTH)) end)
     local boxes = {}
     local y, refreshers = buildSound(f, -16)
     for _, section in ipairs(SECTIONS) do
@@ -204,13 +222,15 @@ local function build()
     test:SetPoint("TOPLEFT", 24, y)
     test:SetText("Open test panel")
     test:SetScript("OnClick", function() ns.togglePanel() end)
+    -- The scroll child is as tall as its content plus a margin, so the scroll bar reaches the button.
+    f:SetHeight(-y + 40)
     -- The checkboxes read the settings each time the page opens, because a slash command can change
     -- them while the page is closed.
-    f:SetScript("OnShow", function()
+    page:SetScript("OnShow", function()
         for _, b in ipairs(boxes) do b.box:SetChecked(ns.toggleState(b.command) and true or false) end
         for _, refresh in ipairs(refreshers) do refresh() end
     end)
-    return f
+    return page
 end
 
 -- The Settings API is the modern options window. Older clients only have InterfaceOptions_AddCategory.
