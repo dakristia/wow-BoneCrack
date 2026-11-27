@@ -36,9 +36,9 @@ local CHIPS = 4
 local BONE_X, BONE_Y = -30, -6
 local WORD_X, WORD_Y = -4, 18
 
--- Both pop-ups start on because the pop-up is how a player tells who fell, and either can be turned
--- off with a slash command.
-local defaults = { popups = true, popupSelf = true }
+-- Both pop-ups start off because out of the box BoneCrack only plays the sound, and a player turns
+-- them on with a slash command or the panel.
+local defaults = { popups = false, popupSelf = false }
 local pool = {}
 
 local function setting(key)

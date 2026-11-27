@@ -18,6 +18,6 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 - `/bonecrack clearlog` clears the saved debug log.
 - `/bonecrack popups` turns the pop-ups on or off. A pop-up shows on the Blizzard party, raid or player frame of whoever fell, and it grows with the damage. Players without Blizzard frames get no pop-up.
 - `/bonecrack instances` turns BoneCrack on or off inside dungeons, raids and other instances. It is off by default, because instances hide more from addons and BoneCrack may cause Lua errors there.
-- `/bonecrack selfpopup` turns the pop-up for your own falls on or off.
+- `/bonecrack selfpopup` turns the pop-up for your own falls on or off. It is off by default and also needs `/bonecrack popups`.
 - `/bonecrack panel` opens a test panel with buttons for the test pop-ups, the sound and the settings.
 - `/bonecrack test [player|party1-4|group] [small|medium|big|death]` shows a pop-up without a fall.
