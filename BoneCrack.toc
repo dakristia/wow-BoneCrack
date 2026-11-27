@@ -9,3 +9,4 @@
 BoneCrack.lua
 Popup.lua
 Panel.lua
+Settings.lua

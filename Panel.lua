@@ -17,6 +17,7 @@ local function toggleState(command)
     if command == "instances" then return type(BoneCrackSettings) == "table" and BoneCrackSettings.instances end
     return BoneCrackDebug
 end
+ns.toggleState = toggleState
 
 local function button(parent, text, x, y, w, command)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
