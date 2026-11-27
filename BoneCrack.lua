@@ -405,6 +405,8 @@ SlashCmdList["BONECRACK"] = function(message)
         BoneCrackSettings[key] = not ns.popupSetting(key)
         print("BoneCrack " .. (key == "popups" and "pop-ups" or "pop-up for your own falls") .. " "
             .. (BoneCrackSettings[key] and "on" or "off"))
+    elseif message == "panel" then
+        ns.togglePanel()
     elseif message:match("^test") then
         testPopup(message)
     else
