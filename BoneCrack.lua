@@ -1,7 +1,28 @@
+local _, ns = ...
+-- A test addon has its own private table and cannot see ns, so this one global hands it over.
+BoneCrackNS = ns
+
 local SOUND = "Interface\\AddOns\\BoneCrack\\bone-crack.ogg"
 local PREFIX = "BoneCrack"
--- Several group members can land at once, so one crack per window is enough.
-local COOLDOWN = 0.5
+-- These are the sound settings a player has not changed. The cooldown of 0.5 seconds keeps one person's
+-- double event from cracking twice, and the cap of 10 a second stops a big raid from drowning the game.
+local SOUND_DEFAULTS = { cooldown = 0.5, cooldownScope = "person", cap = 10, channel = "Master", volume = 100 }
+-- The client has no volume argument for PlaySoundFile, so each volume step is its own pre-rendered file.
+local VOLUME_PATH = "Interface\\AddOns\\BoneCrack\\media\\sound\\bone-crack-"
+-- Rounds a volume to the nearest step of 10 and keeps it between 10 and 100, because those are the files that exist.
+local function volumeStep(v)
+    return math.max(10, math.min(100, math.floor(v / 10 + 0.5) * 10))
+end
+-- The cap counts the cracks that played in this many seconds, so it reads as cracks per second.
+local CAP_WINDOW = 1.0
+-- The client may hide the number of sound channels, and 64 is a common default, so it stands in then.
+local UNKNOWN_CHANNELS = 64
+-- Many cracks at once use up the sound channels, so the player is told when the cap allows too many.
+local CAP_WARNING = "BoneCrack: many cracks at once can cut off other game sounds and get very loud."
+    .. " Use it at your own risk."
+-- These are the sound channels that the client's volume sliders control, in the order the options page shows them.
+local CHANNELS = { "Master", "SFX", "Music", "Ambience", "Dialog" }
+ns.CHANNELS = CHANNELS
 -- Health drops on landing, so the player counts as having fallen if IsFalling was true this recently.
 local LANDING_WINDOW = 0.5
 -- The client does not tell an addon whether another player is falling, so a group member's health
@@ -21,8 +42,22 @@ local PROBE_INTERVAL = 0.2
 local PROBE_MIN_DROP = 2
 -- The saved log keeps only the newest lines so the SavedVariables file stays small.
 local DEBUG_LOG_MAX = 500
+-- A fall that costs less than a tenth of maximum health is only a scrape, so it is the small tier.
+local TIER_SMALL_LOSS = 0.10
+-- A fall that costs up to 30 percent of maximum health is a normal hard landing, and anything above
+-- that is the big tier because it is close to killing a low-level character.
+local TIER_MEDIUM_LOSS = 0.30
+-- Without the health loss, air time is the stand-in. Damage starts at about 1.6 seconds (see
+-- FALL_SECONDS), so a fall shorter than this stays small because its damage is still low.
+local TIER_SMALL_AIR = 2.0
+-- A fall of this many seconds or more is the big tier, because the damage grows with the drop height.
+local TIER_MEDIUM_AIR = 2.6
+-- The details message and the plain "fell" arrive back to back on one channel, so a plain "fell" this
+-- soon after a details message from the same sender is the same fall and is ignored.
+local DETAILS_WINDOW = 1.0
 
-local lastPlayed = 0
+local lastPlayed = {}
+local recent = {}
 local lastFalling = -math.huge
 local fallStart = 0
 local wasFalling = false
@@ -34,10 +69,57 @@ local health = {}
 local lastProbe = 0
 local heights = {}
 local secretLogged = {}
+local lastDetails = {}
+local pendingInfo = nil
 
 local function readable(value)
     -- The Midnight client can hand addons secret values, which cannot be compared.
     return not (issecretvalue and issecretvalue(value))
+end
+ns.readable = readable
+
+-- Turns the facts of a fall into the details message. The old client only knows "fell", so the
+-- details use a different word and are sent first.
+function ns.encodeFall(info)
+    return string.format("fell2:%s:%.2f:%d:%s",
+        info.loss and string.format("%.3f", info.loss) or "-",
+        info.air or 0,
+        info.dead and 1 or 0,
+        info.map and tostring(info.map) or "-")
+end
+
+-- Returns the info table for a details message, or nil for anything else, because the text comes
+-- from another player and may be anything.
+function ns.decodeFall(text)
+    if type(text) ~= "string" then return nil end
+    local loss, air, dead, map = text:match("^fell2:([^:]*):([^:]*):([^:]*):([^:]*)$")
+    if not loss then return nil end
+    local info = { loss = nil, air = tonumber(air), map = nil }
+    if not info.air then return nil end
+    if loss ~= "-" then
+        info.loss = tonumber(loss)
+        if not info.loss then return nil end
+    end
+    if dead == "1" then info.dead = true elseif dead == "0" then info.dead = false else return nil end
+    if map ~= "-" then
+        info.map = tonumber(map)
+        if not info.map then return nil end
+    end
+    return info
+end
+
+-- Returns 0 for a small fall, 1 for medium, 2 for big and 3 for a fall that killed the player.
+function ns.fallTier(info)
+    if info.dead then return 3 end
+    if info.loss then
+        if info.loss < TIER_SMALL_LOSS then return 0 end
+        if info.loss <= TIER_MEDIUM_LOSS then return 1 end
+        return 2
+    end
+    local air = info.air or 0
+    if air < TIER_SMALL_AIR then return 0 end
+    if air < TIER_MEDIUM_AIR then return 1 end
+    return 2
 end
 
 local function log(...)
@@ -46,7 +128,6 @@ local function log(...)
     for i = 1, select("#", ...) do
         if not readable(parts[i]) then parts[i] = "<secret>" else parts[i] = tostring(parts[i]) end
     end
-    print("|cffff8800BoneCrack|r", unpack(parts, 1, select("#", ...)))
     if type(BoneCrackDebugLog) ~= "table" then BoneCrackDebugLog = {} end
     local text = table.concat(parts, " ", 1, select("#", ...))
     local clock = date and date("%H:%M:%S") or ""
@@ -54,29 +135,78 @@ local function log(...)
     while #BoneCrackDebugLog > DEBUG_LOG_MAX do table.remove(BoneCrackDebugLog, 1) end
 end
 
-local function play()
+ns.log = log
+
+local function soundSetting(key)
+    if type(BoneCrackSettings) ~= "table" or BoneCrackSettings[key] == nil then return SOUND_DEFAULTS[key] end
+    return BoneCrackSettings[key]
+end
+ns.soundSetting = soundSetting
+
+-- Returns the warning text while the cap is off or above a quarter of the client's sound channels, else nil.
+function ns.capWarning()
+    local cap = soundSetting("cap")
+    local raw = GetCVar and GetCVar("Sound_NumChannels")
+    local channels = readable(raw) and tonumber(raw)
+    if not channels then channels = UNKNOWN_CHANNELS end
+    if cap == 0 or cap > channels / 4 then return CAP_WARNING end
+end
+
+-- who names the faller: "player", an addon message sender or a unit token. A forced play is the manual
+-- test, so it ignores the cooldown and the cap.
+local function play(who, force)
     local now = GetTime()
-    if now - lastPlayed < COOLDOWN then return end
-    lastPlayed = now
-    PlaySoundFile(SOUND, "Master")
+    if not force then
+        local scope = soundSetting("cooldownScope") == "group" and "group" or (who or "player")
+        local last = lastPlayed[scope]
+        if last and now - last < soundSetting("cooldown") then return end
+        local cap = soundSetting("cap")
+        if cap > 0 then
+            local kept = {}
+            for _, t in ipairs(recent) do
+                if now - t < CAP_WINDOW then kept[#kept + 1] = t end
+            end
+            recent = kept
+            if #recent >= cap then return end
+        end
+        lastPlayed[scope] = now
+    end
+    recent[#recent + 1] = now
+    local volume = volumeStep(tonumber(soundSetting("volume")) or 100)
+    PlaySoundFile(volume == 100 and SOUND or (VOLUME_PATH .. volume .. ".ogg"), soundSetting("channel"))
 end
 
 -- Group members who run BoneCrack hear the player's fall through an addon message, because their
 -- client hides the player's health and falling state from their addon.
-local function broadcast()
+local function broadcast(info)
     if not IsInGroup() then return end
     if C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
         log("addon messages are locked down here, so the fall was not sent")
         return
     end
     local channel = IsInRaid() and "RAID" or "PARTY"
+    -- Messages on one channel arrive in order, so the details come before the plain "fell" that an
+    -- old client waits for.
+    local details = C_ChatInfo.SendAddonMessage(PREFIX, ns.encodeFall(info), channel)
     local result = C_ChatInfo.SendAddonMessage(PREFIX, "fell", channel)
-    log("sent fall to", channel, "result", result)
+    log("sent fall to", channel, "results", details, result)
 end
 
-local function playerFell()
-    play()
-    broadcast()
+-- Collects the facts of the player's own fall. loss is nil when the client hides the health.
+local function buildInfo(loss, air)
+    local deadFlag = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+    local dead = readable(deadFlag) and deadFlag and true or false
+    local current = UnitHealth("player")
+    if readable(current) and current == 0 then dead = true end
+    local map = C_Map.GetBestMapForUnit("player")
+    if not readable(map) then map = nil end
+    return { loss = loss, air = math.max(0, air), dead = dead, map = map }
+end
+
+local function playerFell(info)
+    play("player")
+    broadcast(info)
+    if ns.onFall then ns.onFall("player", info) end
 end
 
 -- Returns the fraction of maximum health that the unit lost since the last event, or nil.
@@ -109,14 +239,16 @@ local function landed()
         "wounds readable:", woundsReadable, "in combat:", combat)
     local minimum = combat and FALL_SECONDS or MIN_FALL_SECONDS
     if not hidden or water or duration < minimum then return end
+    local info = buildInfo(nil, duration)
     if now - lastWound <= WOUND_WINDOW then
-        playerFell()
+        playerFell(info)
     elseif not woundsReadable and duration >= FALL_SECONDS then
-        playerFell()
+        playerFell(info)
     else
         -- The WOUND for this landing may still be on its way. woundsReadable is false after a login
         -- until the first readable UNIT_COMBAT, so that first WOUND can come from this landing too.
         pendingLanding = now
+        pendingInfo = info
     end
 end
 
@@ -128,7 +260,7 @@ local function onPlayerCombat(action)
     lastWound = now
     if pendingLanding and now - pendingLanding <= WOUND_WINDOW then
         pendingLanding = nil
-        playerFell()
+        playerFell(pendingInfo)
     end
 end
 
@@ -155,34 +287,89 @@ local function probePositions(now)
     end
 end
 
+-- Debug only: logs what the distance APIs return for each party member, to find out which of them
+-- give readable values on this client before the distance tiers rely on them.
+local function probeDistance()
+    if not debugging then return end
+    log("player map", C_Map.GetBestMapForUnit("player"), "sound channels", GetCVar("Sound_NumChannels"))
+    for i = 1, GetNumSubgroupMembers() do
+        local unit = "party" .. i
+        local inRange, checked = UnitInRange(unit)
+        log(unit, UnitName(unit), "in range:", inRange, "checked:", checked,
+            "visible:", UnitIsVisible(unit), "map:", C_Map.GetBestMapForUnit(unit))
+    end
+end
+
 local function onHealth(unit)
     local loss = healthLost(unit)
     if not loss then return end
     if UnitIsUnit(unit, "player") then
         local sinceFalling = GetTime() - lastFalling
         log("player lost", loss, "and was falling", sinceFalling, "seconds ago, window", LANDING_WINDOW)
-        if sinceFalling <= LANDING_WINDOW then playerFell() end
+        if sinceFalling <= LANDING_WINDOW then
+            -- lastFalling is the last moment the player was in the air, so it ends the fall's air time.
+            playerFell(buildInfo(loss, lastFalling - fallStart))
+        end
     elseif loss >= GROUP_MIN_LOSS and not UnitAffectingCombat(unit) then
-        play()
+        -- UnitAffectingCombat is unreliable for a far-away member, so a member who is fighting on
+        -- another continent could look out of combat. UnitIsVisible is only true when the client can
+        -- see the unit, so it keeps those drops from playing the sound.
+        if UnitIsVisible(unit) then
+            -- The name matches the sender key of an addon message, so one person's two reports share a cooldown.
+            local name = GetUnitName and GetUnitName(unit, true)
+            play(readable(name) and name or unit)
+        else
+            log(unit, "lost", loss, "but is not visible, so the drop was skipped")
+        end
     end
 end
 
 local function onAddonMessage(prefix, text, _, sender)
-    if prefix ~= PREFIX or text ~= "fell" then return end
+    if prefix ~= PREFIX or not readable(text) or type(text) ~= "string" then return end
+    local details = text:sub(1, 6) == "fell2:"
+    if text ~= "fell" and not details then return end
     if not readable(sender) then return end
     -- The sender hears its own message too, and already played the sound.
-    if Ambiguate(sender, "none") == UnitName("player") then return end
+    local me = UnitName("player")
+    if readable(me) and Ambiguate(sender, "none") == me then return end
+    local now = GetTime()
+    if details then
+        local info = ns.decodeFall(text)
+        if not info then return end
+        lastDetails[sender] = now
+        log("fall details from", sender)
+        probeDistance()
+        play(sender)
+        if ns.onFall then ns.onFall(sender, info) end
+        return
+    end
+    -- A new client sends the details first, so the plain "fell" after them is the same fall.
+    if lastDetails[sender] and now - lastDetails[sender] <= DETAILS_WINDOW then return end
     log("fall message from", sender)
-    play()
+    probeDistance()
+    play(sender)
 end
 
 C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
+-- Instances hide more of the game from addons as secret values, so BoneCrack stays off there unless
+-- the player turns it on with /bonecrack instances and accepts that it may cause errors.
+local function paused()
+    local inside = IsInInstance()
+    if not readable(inside) or not inside then return false end
+    return not (type(BoneCrackSettings) == "table" and BoneCrackSettings.instances)
+end
+
 local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("UNIT_HEALTH")
 frame:RegisterEvent("UNIT_COMBAT")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:SetScript("OnUpdate", function()
+    if paused() then
+        wasFalling = false
+        return
+    end
     local now = GetTime()
     local falling = IsFalling() and true or false
     if falling then lastFalling = now end
@@ -195,8 +382,18 @@ frame:SetScript("OnUpdate", function()
     if debugging then probePositions(now) end
 end)
 frame:SetScript("OnEvent", function(_, event, ...)
+    if event ~= "ADDON_LOADED" and paused() then return end
     if event == "CHAT_MSG_ADDON" then
         onAddonMessage(...)
+        return
+    end
+    if event == "ADDON_LOADED" then
+        -- SavedVariables are only filled in once the addon has loaded, so the saved setting is read here.
+        if ... == PREFIX then
+            debugging = BoneCrackDebug == true
+            -- The log carries over between sessions, so this line marks where a new one starts.
+            log("session start")
+        end
         return
     end
     local unit = ...
@@ -209,18 +406,121 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- The test command takes tier names because they are easier to type than the numbers ns.fallTier returns.
+local TEST_TIERS = { small = 0, medium = 1, big = 2, death = 3 }
+
+-- /bonecrack test [player|party1-4|group] [small|medium|big|death] shows a pop-up without a fall, so
+-- the pop-ups can be checked alone. The group form gives every member a different tier.
+local function testPopup(message)
+    local who, tier = message:match("^test%s*(%S*)%s*(%S*)")
+    if who == "group" then
+        ns.showPopup("player", 1)
+        for i = 1, GetNumSubgroupMembers() do ns.showPopup("party" .. i, i % 4) end
+        return
+    end
+    if who == "" then who = "player" end
+    local t = TEST_TIERS[tier ~= "" and tier or "medium"]
+    if not t then
+        print("BoneCrack: /bonecrack test [player|party1-4|group] [small|medium|big|death]")
+        return
+    end
+    if not ns.showPopup(who, t) then print("BoneCrack: no Blizzard frame shows " .. who) end
+end
+
+-- Each pop-up command toggles one saved setting, and the name is what the chat message calls it.
+local POPUP_COMMANDS = {
+    popups = { "popups", "party pop-ups" },
+    raidpopups = { "popupRaid", "raid pop-ups" },
+    selfpopup = { "popupSelf", "your own pop-ups" },
+    minimap = { "minimap", "minimap button" },
+}
+
+local SOUND_USAGE = "BoneCrack: /bonecrack cooldown <seconds> | cooldownscope person|group"
+    .. " | cap <cracks per second, 0 is off> | channel Master|SFX|Music|Ambience|Dialog"
+    .. " | volume <10-100>"
+
+-- Handles the sound setting commands and returns whether the message was one of them.
+local function soundCommand(message)
+    local command, value = message:match("^(%a+)%s*(.-)%s*$")
+    command = command and command:lower()
+    local function save(key, v)
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings[key] = v
+    end
+    if command == "cooldown" then
+        local n = tonumber(value)
+        if not n or n < 0 then print(SOUND_USAGE) return true end
+        save("cooldown", n)
+        print("BoneCrack cooldown " .. n .. " seconds")
+    elseif command == "cooldownscope" then
+        value = value:lower()
+        if value ~= "person" and value ~= "group" then print(SOUND_USAGE) return true end
+        save("cooldownScope", value)
+        print("BoneCrack cooldown is now per " .. value)
+    elseif command == "cap" then
+        local n = tonumber(value)
+        if not n or n < 0 then print(SOUND_USAGE) return true end
+        save("cap", math.floor(n))
+        print("BoneCrack cap " .. (math.floor(n) == 0 and "off" or (math.floor(n) .. " cracks per second")))
+        -- The warning prints on a change only, so the player sees it once and not on every use.
+        if ns.capWarning() then print(ns.capWarning()) end
+    elseif command == "volume" then
+        local n = tonumber(value)
+        if not n then print(SOUND_USAGE) return true end
+        save("volume", volumeStep(n))
+        print("BoneCrack volume " .. volumeStep(n) .. "%")
+    elseif command == "channel" then
+        for _, name in ipairs(CHANNELS) do
+            if name:lower() == value:lower() then
+                save("channel", name)
+                print("BoneCrack channel " .. name)
+                return true
+            end
+        end
+        print(SOUND_USAGE)
+    else
+        return false
+    end
+    return true
+end
+
 SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
+    message = message or ""
     if message == "debug" then
         debugging = not debugging
-        -- Turning debug on starts a clean log. Turning it off keeps the log, so a /reload afterwards
-        -- writes the session to the SavedVariables file.
-        if debugging then BoneCrackDebugLog = {} end
-        print("BoneCrack debug " .. (debugging and "on, log cleared" or "off"))
+        -- The setting is saved so debug stays on after a /reload. The log is not cleared here because
+        -- the 500-line cap keeps it small, and /bonecrack clearlog empties it.
+        BoneCrackDebug = debugging
+        print("BoneCrack debug " .. (debugging and "on" or "off"))
+        probeDistance()
+    elseif message == "probe" then
+        probeDistance()
     elseif message == "clearlog" then
         BoneCrackDebugLog = {}
         print("BoneCrack debug log cleared")
+    elseif message == "instances" then
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings.instances = not BoneCrackSettings.instances
+        if BoneCrackSettings.instances then
+            print("BoneCrack is now on in instances. Instances hide more from addons, so BoneCrack may cause"
+                .. " Lua errors there. Use it at your own risk, and /bonecrack instances turns it off again.")
+        else
+            print("BoneCrack is off in instances")
+        end
+    elseif POPUP_COMMANDS[message] then
+        local key, name = POPUP_COMMANDS[message][1], POPUP_COMMANDS[message][2]
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings[key] = not ns.popupSetting(key)
+        print("BoneCrack " .. name .. " " .. (BoneCrackSettings[key] and "on" or "off"))
+        if key == "minimap" and ns.updateMinimap then ns.updateMinimap() end
+    elseif message == "panel" then
+        ns.togglePanel()
+    elseif message:match("^test") then
+        testPopup(message)
+    elseif soundCommand(message) then
+        return
     else
-        play()
+        play("player", true)
     end
 end

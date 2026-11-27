@@ -4,6 +4,11 @@
 ## Author: Daniel
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1823372
-## SavedVariables: BoneCrackDebugLog
+## IconTexture: Interface\AddOns\BoneCrack\media\icon
+## SavedVariables: BoneCrackDebugLog, BoneCrackDebug, BoneCrackSettings
 
 BoneCrack.lua
+Popup.lua
+Panel.lua
+Settings.lua
+Minimap.lua
