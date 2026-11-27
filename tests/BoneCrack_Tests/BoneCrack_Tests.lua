@@ -837,6 +837,27 @@ local function runAll()
             check(#calls == 1 and calls[1].channel == "SFX", "expected one play on SFX")
         end)
 
+        run("the default volume plays the full-volume file", function()
+            local calls = sound({}, function(send) send("Glue-Realm") end)
+            check(#calls == 1 and calls[1].path == "Interface\\AddOns\\BoneCrack\\bone-crack.ogg",
+                "expected bone-crack.ogg")
+        end)
+
+        run("volume 50 plays the pre-rendered 50 file", function()
+            local calls = sound({ volume = 50 }, function(send) send("Glue-Realm") end)
+            check(#calls == 1 and calls[1].path == "Interface\\AddOns\\BoneCrack\\media\\sound\\bone-crack-50.ogg",
+                "expected bone-crack-50.ogg")
+        end)
+
+        run("/bonecrack volume saves the rounded value and bad input keeps the old one", function()
+            sound({}, function()
+                SlashCmdList["BONECRACK"]("volume 47")
+                check(BoneCrackSettings.volume == 50, "expected 50, got " .. tostring(BoneCrackSettings.volume))
+                SlashCmdList["BONECRACK"]("volume abc")
+                check(BoneCrackSettings.volume == 50, "bad volume must not change it")
+            end)
+        end)
+
         run("/bonecrack channel and cap save their values and bad input is rejected", function()
             sound({}, function()
                 SlashCmdList["BONECRACK"]("channel sfx")

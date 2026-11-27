@@ -164,7 +164,12 @@ local function buildSound(f, y)
     channelLabel:SetText("Sound channel")
     y = y - 22
     refreshers[#refreshers + 1] = addChannelDropdown(f, y)
-    y = y - 44
+    y = y - 36
+
+    local _, refreshVolume = addSlider(f, y, "volume", "Volume", 10, 100, 10,
+        function(v) return string.format("%d%%", v) end)
+    refreshers[#refreshers + 1] = refreshVolume
+    y = y - SLIDER_ROW
     return y, refreshers
 end
 

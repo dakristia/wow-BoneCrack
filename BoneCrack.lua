@@ -6,7 +6,13 @@ local SOUND = "Interface\\AddOns\\BoneCrack\\bone-crack.ogg"
 local PREFIX = "BoneCrack"
 -- These are the sound settings a player has not changed. The cooldown of 0.5 seconds keeps one person's
 -- double event from cracking twice, and the cap of 10 a second stops a big raid from drowning the game.
-local SOUND_DEFAULTS = { cooldown = 0.5, cooldownScope = "person", cap = 10, channel = "Master" }
+local SOUND_DEFAULTS = { cooldown = 0.5, cooldownScope = "person", cap = 10, channel = "Master", volume = 100 }
+-- The client has no volume argument for PlaySoundFile, so each volume step is its own pre-rendered file.
+local VOLUME_PATH = "Interface\\AddOns\\BoneCrack\\media\\sound\\bone-crack-"
+-- Rounds a volume to the nearest step of 10 and keeps it between 10 and 100, because those are the files that exist.
+local function volumeStep(v)
+    return math.max(10, math.min(100, math.floor(v / 10 + 0.5) * 10))
+end
 -- The cap counts the cracks that played in this many seconds, so it reads as cracks per second.
 local CAP_WINDOW = 1.0
 -- The client may hide the number of sound channels, and 64 is a common default, so it stands in then.
@@ -166,7 +172,8 @@ local function play(who, force)
         lastPlayed[scope] = now
     end
     recent[#recent + 1] = now
-    PlaySoundFile(SOUND, soundSetting("channel"))
+    local volume = volumeStep(tonumber(soundSetting("volume")) or 100)
+    PlaySoundFile(volume == 100 and SOUND or (VOLUME_PATH .. volume .. ".ogg"), soundSetting("channel"))
 end
 
 -- Group members who run BoneCrack hear the player's fall through an addon message, because their
@@ -430,6 +437,7 @@ local POPUP_COMMANDS = {
 
 local SOUND_USAGE = "BoneCrack: /bonecrack cooldown <seconds> | cooldownscope person|group"
     .. " | cap <cracks per second, 0 is off> | channel Master|SFX|Music|Ambience|Dialog"
+    .. " | volume <10-100>"
 
 -- Handles the sound setting commands and returns whether the message was one of them.
 local function soundCommand(message)
@@ -456,6 +464,11 @@ local function soundCommand(message)
         print("BoneCrack cap " .. (math.floor(n) == 0 and "off" or (math.floor(n) .. " cracks per second")))
         -- The warning prints on a change only, so the player sees it once and not on every use.
         if ns.capWarning() then print(ns.capWarning()) end
+    elseif command == "volume" then
+        local n = tonumber(value)
+        if not n then print(SOUND_USAGE) return true end
+        save("volume", volumeStep(n))
+        print("BoneCrack volume " .. volumeStep(n) .. "%")
     elseif command == "channel" then
         for _, name in ipairs(CHANNELS) do
             if name:lower() == value:lower() then
