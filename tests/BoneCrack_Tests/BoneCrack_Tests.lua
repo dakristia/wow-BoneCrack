@@ -149,16 +149,12 @@ local function runAll()
         check(isBoneCrack(calls[1].path), "unexpected path " .. tostring(calls[1].path))
     end)
 
-    run("two back-to-back calls play only once", function()
-        local before, after
-        record(function(calls)
+    run("two back-to-back manual calls both play, because the test command ignores the cooldown", function()
+        local calls = record(function()
             SlashCmdList["BONECRACK"]()
-            before = #calls
             SlashCmdList["BONECRACK"]()
-            after = #calls
         end)
-        check(before <= 1, "first call played " .. before .. " times")
-        check(after == before, "second call played within the cooldown")
+        check(#calls == 2, "expected 2 plays, got " .. #calls)
     end)
 
     -- BoneCrack.lua shares its private table through one global, because a test addon has its own table.
@@ -770,6 +766,98 @@ local function runAll()
 
         run("showPopup without a group frame returns false and does not error", function()
             check(ns.showPopup("party3", 1) == false, "expected false for a missing party3")
+        end)
+    end
+
+    do
+        -- Runs fn(send, setTime) with the given settings, a fake clock and a recording PlaySoundFile.
+        -- send(sender) delivers a fall message from that sender and the clock starts far after earlier tests.
+        local function sound(settings, fn)
+            local saved = BoneCrackSettings
+            BoneCrackSettings = settings
+            local now = GetTime() + 1000 * (clockJumps + 10)
+            clockJumps = clockJumps + 10
+            local calls
+            local ok, err = pcall(function()
+                calls = record(function()
+                    withStubs({ GetTime = function() return now end }, function()
+                        fn(function(sender)
+                            frame:GetScript("OnEvent")(frame, "CHAT_MSG_ADDON", "BoneCrack", "fell", "PARTY", sender)
+                        end, function(t) now = t end, function() return now end)
+                    end)
+                end)
+            end)
+            BoneCrackSettings = saved
+            if not ok then error(err, 0) end
+            return calls
+        end
+
+        run("per-person cooldown lets two senders play but blocks the same sender twice", function()
+            local calls = sound({}, function(send, set, get)
+                send("Glue-Realm")
+                set(get() + 0.1)
+                send("Paste-Realm")
+                set(get() + 0.1)
+                send("Glue-Realm")
+            end)
+            check(#calls == 2, "expected 2 plays, got " .. #calls)
+        end)
+
+        run("group cooldown skips a second sender inside the cooldown", function()
+            local calls = sound({ cooldownScope = "group" }, function(send, set, get)
+                send("Glue-Realm")
+                set(get() + 0.1)
+                send("Paste-Realm")
+            end)
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
+        run("cap of 2 skips the third play within a second", function()
+            local calls = sound({ cooldown = 0, cap = 2 }, function(send, set, get)
+                send("A-Realm")
+                set(get() + 0.1)
+                send("B-Realm")
+                set(get() + 0.1)
+                send("C-Realm")
+                set(get() + 1.0)
+                send("D-Realm")
+            end)
+            check(#calls == 3, "expected 3 plays, got " .. #calls)
+        end)
+
+        run("cap 0 means unlimited", function()
+            local calls = sound({ cooldown = 0, cap = 0 }, function(send)
+                for i = 1, 30 do send("P" .. i .. "-Realm") end
+            end)
+            check(#calls == 30, "expected 30 plays, got " .. #calls)
+        end)
+
+        run("the channel setting is passed to PlaySoundFile", function()
+            local calls = sound({ channel = "SFX" }, function(send) send("Glue-Realm") end)
+            check(#calls == 1 and calls[1].channel == "SFX", "expected one play on SFX")
+        end)
+
+        run("/bonecrack channel and cap save their values and bad input is rejected", function()
+            sound({}, function()
+                SlashCmdList["BONECRACK"]("channel sfx")
+                check(BoneCrackSettings.channel == "SFX", "expected SFX")
+                SlashCmdList["BONECRACK"]("channel nope")
+                check(BoneCrackSettings.channel == "SFX", "bad channel must not change it")
+                SlashCmdList["BONECRACK"]("cap 5")
+                check(BoneCrackSettings.cap == 5, "expected cap 5")
+                SlashCmdList["BONECRACK"]("cooldownscope group")
+                check(BoneCrackSettings.cooldownScope == "group", "expected group scope")
+                SlashCmdList["BONECRACK"]("cooldown 1.5")
+                check(BoneCrackSettings.cooldown == 1.5, "expected cooldown 1.5")
+            end)
+        end)
+
+        run("/bonecrack with no arguments ignores the cooldown", function()
+            local calls = sound({ cooldown = 5, cap = 1 }, function()
+                SlashCmdList["BONECRACK"]("")
+                SlashCmdList["BONECRACK"]("")
+            end)
+            check(#calls == 2, "expected 2 plays, got " .. #calls)
         end)
     end
 

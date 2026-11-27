@@ -4,8 +4,19 @@ BoneCrackNS = ns
 
 local SOUND = "Interface\\AddOns\\BoneCrack\\bone-crack.ogg"
 local PREFIX = "BoneCrack"
--- Several group members can land at once, so one crack per window is enough.
-local COOLDOWN = 0.5
+-- These are the sound settings a player has not changed. The cooldown of 0.5 seconds keeps one person's
+-- double event from cracking twice, and the cap of 10 a second stops a big raid from drowning the game.
+local SOUND_DEFAULTS = { cooldown = 0.5, cooldownScope = "person", cap = 10, channel = "Master" }
+-- The cap counts the cracks that played in this many seconds, so it reads as cracks per second.
+local CAP_WINDOW = 1.0
+-- The client may hide the number of sound channels, and 64 is a common default, so it stands in then.
+local UNKNOWN_CHANNELS = 64
+-- Many cracks at once use up the sound channels, so the player is told when the cap allows too many.
+local CAP_WARNING = "BoneCrack: many cracks at once can cut off other game sounds and get very loud."
+    .. " Use it at your own risk."
+-- These are the sound channels that the client's volume sliders control, in the order the options page shows them.
+local CHANNELS = { "Master", "SFX", "Music", "Ambience", "Dialog" }
+ns.CHANNELS = CHANNELS
 -- Health drops on landing, so the player counts as having fallen if IsFalling was true this recently.
 local LANDING_WINDOW = 0.5
 -- The client does not tell an addon whether another player is falling, so a group member's health
@@ -39,7 +50,8 @@ local TIER_MEDIUM_AIR = 2.6
 -- soon after a details message from the same sender is the same fall and is ignored.
 local DETAILS_WINDOW = 1.0
 
-local lastPlayed = 0
+local lastPlayed = {}
+local recent = {}
 local lastFalling = -math.huge
 local fallStart = 0
 local wasFalling = false
@@ -119,11 +131,42 @@ end
 
 ns.log = log
 
-local function play()
+local function soundSetting(key)
+    if type(BoneCrackSettings) ~= "table" or BoneCrackSettings[key] == nil then return SOUND_DEFAULTS[key] end
+    return BoneCrackSettings[key]
+end
+ns.soundSetting = soundSetting
+
+-- Returns the warning text while the cap is off or above a quarter of the client's sound channels, else nil.
+function ns.capWarning()
+    local cap = soundSetting("cap")
+    local raw = GetCVar and GetCVar("Sound_NumChannels")
+    local channels = readable(raw) and tonumber(raw)
+    if not channels then channels = UNKNOWN_CHANNELS end
+    if cap == 0 or cap > channels / 4 then return CAP_WARNING end
+end
+
+-- who names the faller: "player", an addon message sender or a unit token. A forced play is the manual
+-- test, so it ignores the cooldown and the cap.
+local function play(who, force)
     local now = GetTime()
-    if now - lastPlayed < COOLDOWN then return end
-    lastPlayed = now
-    PlaySoundFile(SOUND, "Master")
+    if not force then
+        local scope = soundSetting("cooldownScope") == "group" and "group" or (who or "player")
+        local last = lastPlayed[scope]
+        if last and now - last < soundSetting("cooldown") then return end
+        local cap = soundSetting("cap")
+        if cap > 0 then
+            local kept = {}
+            for _, t in ipairs(recent) do
+                if now - t < CAP_WINDOW then kept[#kept + 1] = t end
+            end
+            recent = kept
+            if #recent >= cap then return end
+        end
+        lastPlayed[scope] = now
+    end
+    recent[#recent + 1] = now
+    PlaySoundFile(SOUND, soundSetting("channel"))
 end
 
 -- Group members who run BoneCrack hear the player's fall through an addon message, because their
@@ -154,7 +197,7 @@ local function buildInfo(loss, air)
 end
 
 local function playerFell(info)
-    play()
+    play("player")
     broadcast(info)
     if ns.onFall then ns.onFall("player", info) end
 end
@@ -265,7 +308,9 @@ local function onHealth(unit)
         -- another continent could look out of combat. UnitIsVisible is only true when the client can
         -- see the unit, so it keeps those drops from playing the sound.
         if UnitIsVisible(unit) then
-            play()
+            -- The name matches the sender key of an addon message, so one person's two reports share a cooldown.
+            local name = GetUnitName and GetUnitName(unit, true)
+            play(readable(name) and name or unit)
         else
             log(unit, "lost", loss, "but is not visible, so the drop was skipped")
         end
@@ -287,7 +332,7 @@ local function onAddonMessage(prefix, text, _, sender)
         lastDetails[sender] = now
         log("fall details from", sender)
         probeDistance()
-        play()
+        play(sender)
         if ns.onFall then ns.onFall(sender, info) end
         return
     end
@@ -295,7 +340,7 @@ local function onAddonMessage(prefix, text, _, sender)
     if lastDetails[sender] and now - lastDetails[sender] <= DETAILS_WINDOW then return end
     log("fall message from", sender)
     probeDistance()
-    play()
+    play(sender)
 end
 
 C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
@@ -382,6 +427,49 @@ local POPUP_COMMANDS = {
     selfpopup = { "popupSelf", "your own pop-ups" },
 }
 
+local SOUND_USAGE = "BoneCrack: /bonecrack cooldown <seconds> | cooldownscope person|group"
+    .. " | cap <cracks per second, 0 is off> | channel Master|SFX|Music|Ambience|Dialog"
+
+-- Handles the sound setting commands and returns whether the message was one of them.
+local function soundCommand(message)
+    local command, value = message:match("^(%a+)%s*(.-)%s*$")
+    command = command and command:lower()
+    local function save(key, v)
+        if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
+        BoneCrackSettings[key] = v
+    end
+    if command == "cooldown" then
+        local n = tonumber(value)
+        if not n or n < 0 then print(SOUND_USAGE) return true end
+        save("cooldown", n)
+        print("BoneCrack cooldown " .. n .. " seconds")
+    elseif command == "cooldownscope" then
+        value = value:lower()
+        if value ~= "person" and value ~= "group" then print(SOUND_USAGE) return true end
+        save("cooldownScope", value)
+        print("BoneCrack cooldown is now per " .. value)
+    elseif command == "cap" then
+        local n = tonumber(value)
+        if not n or n < 0 then print(SOUND_USAGE) return true end
+        save("cap", math.floor(n))
+        print("BoneCrack cap " .. (math.floor(n) == 0 and "off" or (math.floor(n) .. " cracks per second")))
+        -- The warning prints on a change only, so the player sees it once and not on every use.
+        if ns.capWarning() then print(ns.capWarning()) end
+    elseif command == "channel" then
+        for _, name in ipairs(CHANNELS) do
+            if name:lower() == value:lower() then
+                save("channel", name)
+                print("BoneCrack channel " .. name)
+                return true
+            end
+        end
+        print(SOUND_USAGE)
+    else
+        return false
+    end
+    return true
+end
+
 SLASH_BONECRACK1 = "/bonecrack"
 SlashCmdList["BONECRACK"] = function(message)
     message = message or ""
@@ -415,7 +503,9 @@ SlashCmdList["BONECRACK"] = function(message)
         ns.togglePanel()
     elseif message:match("^test") then
         testPopup(message)
+    elseif soundCommand(message) then
+        return
     else
-        play()
+        play("player", true)
     end
 end

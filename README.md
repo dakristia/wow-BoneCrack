@@ -13,7 +13,11 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 
 ## Commands
 
-- `/bonecrack` plays the sound.
+- `/bonecrack` plays the sound. It ignores the cooldown and the cap, so it works as a test.
+- `/bonecrack cooldown <seconds>` sets the time between two cracks. The default is 0.5 seconds.
+- `/bonecrack cooldownscope person|group` sets whether each person has their own cooldown or the whole group shares one. The default is per person.
+- `/bonecrack cap <n>` sets the most cracks per second. The default is 10, and 0 turns the cap off. A high cap or no cap can cut off other game sounds, so BoneCrack warns you when you set one.
+- `/bonecrack channel Master|SFX|Music|Ambience|Dialog` sets the sound channel the crack plays on, so the matching volume slider controls it. The default is Master.
 - `/bonecrack debug` turns debug logging on or off. WoW remembers the setting across sessions. Debug prints nothing to chat. It saves what the addon sees to `BoneCrackDebugLog` in the SavedVariables file, which WoW writes on /reload or logout. The log is kept between sessions and holds at most the newest 500 lines. Read it with `bin/debuglog BoneCrack` from wow-addon-workshop.
 - `/bonecrack clearlog` clears the saved debug log.
 - `/bonecrack popups` turns the party pop-ups on or off, and `/bonecrack raidpopups` the raid pop-ups. All pop-ups are off by default, so out of the box BoneCrack only plays the sound. A pop-up shows on the Blizzard party, raid or player frame of whoever fell, and it grows with the damage. Players without Blizzard frames get no pop-up. The same settings are on the BoneCrack page in the game options, under AddOns.
