@@ -9,6 +9,7 @@ local SECTIONS = {
         { "selfpopup", "Show your own pop-ups", "Shows a pop-up on your own frame when you fall." },
     } },
     { "General", {
+        { "minimap", "Show minimap button", "Adds a button to the minimap. Left-click opens these options, right-click opens the test panel." },
         { "instances", "Run in instances", "Instances hide more from addons, so BoneCrack may cause Lua errors there." },
         { "debug", "Debug log", "Saves what BoneCrack sees to the SavedVariables file. Prints nothing to chat." },
     } },
@@ -178,6 +179,8 @@ local frame = build()
 if Settings and Settings.RegisterCanvasLayoutCategory then
     local category = Settings.RegisterCanvasLayoutCategory(frame, "BoneCrack")
     Settings.RegisterAddOnCategory(category)
+    -- The minimap button opens the page by this ID.
+    ns.settingsCategoryID = category.GetID and category:GetID() or nil
 elseif InterfaceOptions_AddCategory then
     frame.name = "BoneCrack"
     InterfaceOptions_AddCategory(frame)

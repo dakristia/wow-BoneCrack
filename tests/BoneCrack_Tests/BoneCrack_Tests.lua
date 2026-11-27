@@ -861,6 +861,38 @@ local function runAll()
         end)
     end
 
+    do
+        local ns = BoneCrackNS
+        -- Starts from default settings and restores them afterwards.
+        local function minimap(fn)
+            local saved = BoneCrackSettings
+            BoneCrackSettings = nil
+            local ok, err = pcall(fn)
+            BoneCrackSettings = saved
+            if ns.updateMinimap then ns.updateMinimap() end
+            if not ok then error(err, 0) end
+        end
+
+        run("the minimap button is off by default", function()
+            if not Minimap then return end
+            minimap(function()
+                ns.updateMinimap()
+                local b = BoneCrackMinimapButton
+                check(b == nil or not b:IsShown(), "expected no visible button by default")
+            end)
+        end)
+
+        run("/bonecrack minimap shows the button and a second call hides it", function()
+            if not Minimap then return end
+            minimap(function()
+                SlashCmdList["BONECRACK"]("minimap")
+                check(BoneCrackMinimapButton and BoneCrackMinimapButton:IsShown(), "expected the button to show")
+                SlashCmdList["BONECRACK"]("minimap")
+                check(not BoneCrackMinimapButton:IsShown(), "expected the button to hide")
+            end)
+        end)
+    end
+
     __wowless.printf("RESULT %d passed, %d failed\n", passed, failed)
     __wowless.quit(failed == 0 and 0 or 1)
 end

@@ -23,5 +23,6 @@ In WowUp, choose "Install from URL" and paste `https://github.com/dakristia/wow-
 - `/bonecrack popups` turns the party pop-ups on or off, and `/bonecrack raidpopups` the raid pop-ups. All pop-ups are off by default, so out of the box BoneCrack only plays the sound. A pop-up shows on the Blizzard party, raid or player frame of whoever fell, and it grows with the damage. Players without Blizzard frames get no pop-up. The same settings are on the BoneCrack page in the game options, under AddOns.
 - `/bonecrack instances` turns BoneCrack on or off inside dungeons, raids and other instances. It is off by default, because instances hide more from addons and BoneCrack may cause Lua errors there.
 - `/bonecrack selfpopup` turns the pop-up for your own falls on or off. It is off by default.
+- `/bonecrack minimap` shows or hides a minimap button. Left-click opens the options, right-click opens the test panel, and you can drag it around the minimap. It is off by default.
 - `/bonecrack panel` opens a test panel with buttons for the test pop-ups, the sound and the settings.
 - `/bonecrack test [player|party1-4|group] [small|medium|big|death]` shows a pop-up without a fall.

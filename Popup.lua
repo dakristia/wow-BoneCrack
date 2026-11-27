@@ -38,8 +38,9 @@ local WORD_X, WORD_Y = -4, 18
 
 -- The pop-ups start off because out of the box BoneCrack only plays the sound, and a player turns
 -- them on with a slash command or the options page. Party, raid and own pop-ups are separate, because
--- many pop-ups at once in a raid can be too much for a player who likes them in a party.
-local defaults = { popups = false, popupRaid = false, popupSelf = false }
+-- many pop-ups at once in a raid can be too much for a player who likes them in a party. The minimap
+-- button is off for the same reason, and it shares this table so one reader serves every on/off setting.
+local defaults = { popups = false, popupRaid = false, popupSelf = false, minimap = false }
 local pool = {}
 
 local function setting(key)

@@ -425,6 +425,7 @@ local POPUP_COMMANDS = {
     popups = { "popups", "party pop-ups" },
     raidpopups = { "popupRaid", "raid pop-ups" },
     selfpopup = { "popupSelf", "your own pop-ups" },
+    minimap = { "minimap", "minimap button" },
 }
 
 local SOUND_USAGE = "BoneCrack: /bonecrack cooldown <seconds> | cooldownscope person|group"
@@ -499,6 +500,7 @@ SlashCmdList["BONECRACK"] = function(message)
         if type(BoneCrackSettings) ~= "table" then BoneCrackSettings = {} end
         BoneCrackSettings[key] = not ns.popupSetting(key)
         print("BoneCrack " .. name .. " " .. (BoneCrackSettings[key] and "on" or "off"))
+        if key == "minimap" and ns.updateMinimap then ns.updateMinimap() end
     elseif message == "panel" then
         ns.togglePanel()
     elseif message:match("^test") then

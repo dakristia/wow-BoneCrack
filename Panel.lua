@@ -17,6 +17,7 @@ local function toggleState(command)
     if command == "popups" then return ns.popupSetting("popups") end
     if command == "raidpopups" then return ns.popupSetting("popupRaid") end
     if command == "selfpopup" then return ns.popupSetting("popupSelf") end
+    if command == "minimap" then return ns.popupSetting("minimap") end
     if command == "instances" then return type(BoneCrackSettings) == "table" and BoneCrackSettings.instances end
     return BoneCrackDebug
 end
