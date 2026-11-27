@@ -161,6 +161,46 @@ local function runAll()
         check(after == before, "second call played within the cooldown")
     end)
 
+    -- BoneCrack.lua shares its private table through one global, because a test addon has its own table.
+    local ns = BoneCrackNS
+
+    run("encodeFall and decodeFall round trip", function()
+        check(ns and ns.encodeFall and ns.decodeFall, "ns functions are missing")
+        local text = ns.encodeFall({ loss = 0.25, air = 2.1, dead = true, map = 84 })
+        check(text == "fell2:0.250:2.10:1:84", "unexpected text " .. tostring(text))
+        local info = ns.decodeFall(text)
+        check(info.loss == 0.25 and info.air == 2.1 and info.dead == true and info.map == 84, "round trip differs")
+        local bare = ns.decodeFall(ns.encodeFall({ air = 1.5, dead = false }))
+        check(bare.loss == nil and bare.map == nil and bare.air == 1.5 and bare.dead == false, "bare round trip differs")
+        check(ns.encodeFall({ air = 1.5, dead = false }) == "fell2:-:1.50:0:-", "unexpected bare text")
+    end)
+
+    run("decodeFall returns nil for malformed text without erroring", function()
+        for _, text in ipairs({ "fell2:", "fell2:x:y:z:w", "fell", "", "fell2:0.1:2:3:4", "fell2:-:1.0:1:-:extra" }) do
+            local ok, result = pcall(ns.decodeFall, text)
+            check(ok, "decodeFall errored on " .. text)
+            check(result == nil, "expected nil for " .. text)
+        end
+        for _, junk in ipairs({ 5, true, {} }) do
+            local ok, result = pcall(ns.decodeFall, junk)
+            check(ok and result == nil, "decodeFall mishandled " .. type(junk))
+        end
+        check(select("#", pcall(ns.decodeFall, nil)) == 2, "decodeFall errored on nil")
+    end)
+
+    run("fallTier sorts by loss, air time and death", function()
+        local function tier(info) return ns.fallTier(info) end
+        check(tier({ loss = 0.099, air = 1, dead = false }) == 0, "0.099 is not small")
+        check(tier({ loss = 0.10, air = 1, dead = false }) == 1, "0.10 is not medium")
+        check(tier({ loss = 0.30, air = 1, dead = false }) == 1, "0.30 is not medium")
+        check(tier({ loss = 0.301, air = 1, dead = false }) == 2, "0.301 is not big")
+        check(tier({ loss = 0.05, air = 1, dead = true }) == 3, "dead is not death")
+        check(tier({ air = 1.9, dead = false }) == 0, "1.9s is not small")
+        check(tier({ air = 2.0, dead = false }) == 1, "2.0s is not medium")
+        check(tier({ air = 2.59, dead = false }) == 1, "2.59s is not medium")
+        check(tier({ air = 2.6, dead = false }) == 2, "2.6s is not big")
+    end)
+
     local frame = findAddonFrame()
     run("addon frame with OnEvent and OnUpdate scripts is found", function()
         check(frame ~= nil, "no UNIT_HEALTH frame with an OnEvent function from BoneCrack")
@@ -322,20 +362,45 @@ local function runAll()
             return calls, sent
         end
 
-        run("own fall in a party plays once and sends fell to PARTY", function()
+        run("own fall in a party plays once and sends details then fell to PARTY", function()
             local calls, sent = fallInGroup({ group = true })
             check(#calls == 1, "expected 1 play, got " .. #calls)
-            check(#sent == 1, "expected 1 message, got " .. #sent)
+            check(#sent == 2, "expected 2 messages, got " .. #sent)
             check(sent[1].prefix == "BoneCrack", "unexpected prefix " .. tostring(sent[1].prefix))
-            check(sent[1].text == "fell", "unexpected text " .. tostring(sent[1].text))
+            check(sent[1].text:match("^fell2:") ~= nil, "first message is not details: " .. tostring(sent[1].text))
+            check(sent[2].prefix == "BoneCrack", "unexpected prefix " .. tostring(sent[2].prefix))
+            check(sent[2].text == "fell", "unexpected text " .. tostring(sent[2].text))
             check(sent[1].channel == "PARTY", "unexpected channel " .. tostring(sent[1].channel))
+            check(sent[2].channel == "PARTY", "unexpected channel " .. tostring(sent[2].channel))
         end)
 
-        run("own fall in a raid sends fell to RAID", function()
+        run("own fall in a raid sends both messages to RAID", function()
             local calls, sent = fallInGroup({ group = true, raid = true })
             check(#calls == 1, "expected 1 play, got " .. #calls)
-            check(#sent == 1, "expected 1 message, got " .. #sent)
+            check(#sent == 2, "expected 2 messages, got " .. #sent)
             check(sent[1].channel == "RAID", "unexpected channel " .. tostring(sent[1].channel))
+            check(sent[2].channel == "RAID", "unexpected channel " .. tostring(sent[2].channel))
+        end)
+
+        run("own fall sends details that decode to the fall's air time", function()
+            local _, sent = fallInGroup({ group = true })
+            local info = ns.decodeFall(sent[1].text)
+            check(info ~= nil, "details did not decode: " .. tostring(sent[1].text))
+            check(info.loss == nil, "expected no loss for hidden health")
+            check(info.air == 2, "expected 2.0 air, got " .. tostring(info.air))
+            check(info.dead == false, "expected dead false")
+        end)
+
+        run("own fall calls onFall with player and the info", function()
+            local who, got, n = nil, nil, 0
+            local original = ns.onFall
+            ns.onFall = function(w, i) who, got, n = w, i, n + 1 end
+            local ok, err = pcall(fallInGroup, { group = false })
+            ns.onFall = original
+            if not ok then error(err, 0) end
+            check(n == 1, "expected 1 onFall call, got " .. n)
+            check(who == "player", "unexpected who " .. tostring(who))
+            check(got.air == 2 and got.loss == nil and got.dead == false, "unexpected info")
         end)
 
         run("own fall during chat lockdown plays once and sends nothing", function()
@@ -370,6 +435,57 @@ local function runAll()
             local calls = receive("BoneCrack", "fell", "PARTY", "Friend-Realm")
             check(#calls == 1, "expected 1 play, got " .. #calls)
             check(isBoneCrack(calls[1].path), "unexpected path " .. tostring(calls[1].path))
+        end)
+
+        -- Fires several CHAT_MSG_ADDON events in order on one clock, like messages on one channel.
+        -- Each message is { text, sender }. Returns the recorded plays and the onFall calls.
+        local function receiveAll(messages)
+            local falls = {}
+            local original = ns.onFall
+            ns.onFall = function(who, info) falls[#falls + 1] = { who = who, info = info } end
+            local ok, calls = pcall(function()
+                return record(function()
+                    withLaterClock(function()
+                        withStubs({
+                            Ambiguate = function(name) return (name:gsub("%-.*$", "")) end,
+                            UnitName = function(unit) if unit == "player" then return "Me" end end,
+                        }, function()
+                            for _, m in ipairs(messages) do
+                                frame:GetScript("OnEvent")(frame, "CHAT_MSG_ADDON", "BoneCrack", m[1], "PARTY", m[2])
+                            end
+                        end)
+                    end)
+                end)
+            end)
+            ns.onFall = original
+            if not ok then error(calls, 0) end
+            return calls, falls
+        end
+
+        run("details then fell from a new client plays once", function()
+            local calls = receiveAll({ { "fell2:0.250:2.10:0:1", "New-Realm" }, { "fell", "New-Realm" } })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+        end)
+
+        run("a lone fell from an old client plays and calls no onFall", function()
+            local calls, falls = receiveAll({ { "fell", "Old-Realm" } })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#falls == 0, "expected 0 onFall calls, got " .. #falls)
+        end)
+
+        run("details message calls onFall with the sender and decoded info", function()
+            local calls, falls = receiveAll({ { "fell2:0.250:2.10:1:1", "New-Realm" } })
+            check(#calls == 1, "expected 1 play, got " .. #calls)
+            check(#falls == 1, "expected 1 onFall call, got " .. #falls)
+            check(falls[1].who == "New-Realm", "unexpected who " .. tostring(falls[1].who))
+            check(falls[1].info.loss == 0.25 and falls[1].info.air == 2.1, "unexpected loss or air")
+            check(falls[1].info.dead == true and falls[1].info.map == 1, "unexpected dead or map")
+        end)
+
+        run("malformed details message stays silent", function()
+            local calls, falls = receiveAll({ { "fell2:x:y:z:w", "New-Realm" } })
+            check(#calls == 0, "expected 0 plays, got " .. #calls)
+            check(#falls == 0, "expected 0 onFall calls, got " .. #falls)
         end)
 
         run("fall message from the player's own name stays silent", function()
